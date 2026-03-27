@@ -4,15 +4,21 @@ import { ChatInterface } from './components/chat'
 import { SettingsDialog, ExportDialog, ImportDialog } from './components/settings'
 import { initDB } from './lib/storage'
 import { useSettingsStore } from './stores'
+import { resumePendingOperations } from './services/operationService'
 
 function App() {
   const { theme } = useSettingsStore()
 
-  // Initialize database
+  // Initialize database and resume pending operations
   useEffect(() => {
-    initDB().catch((error) => {
-      console.error('Failed to initialize database:', error)
-    })
+    initDB()
+      .then(() => {
+        // 数据库初始化完成后，恢复未完成的操作
+        return resumePendingOperations()
+      })
+      .catch((error) => {
+        console.error('Failed to initialize database:', error)
+      })
   }, [])
 
   // Apply theme

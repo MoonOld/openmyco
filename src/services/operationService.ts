@@ -103,7 +103,20 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       operationType: 'create_graph',
     })
 
-    // 8. 定向写入图谱
+    // 8. 并发安全校验： 检查操作是否仍然有效
+    const currentOp = useOperationStore.getState().getOperation(operationId)
+    if (!currentOp || currentOp.status !== 'pending') {
+      console.log('[OperationService] 操作已被取消或替换，放弃写入')
+      return {
+        success: false,
+        operationId,
+        graphId,
+        error: '操作已取消',
+        wasCurrentGraph: false,
+      }
+    }
+
+    // 9. 定向写入图谱
     const result = await useKnowledgeStore.getState().updateGraphById(graphId, {
       rootNodeId: patch.rootNodeId,
       rootNodeUpdates: patch.rootNodeUpdates,
@@ -250,6 +263,19 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription),
       client.getRelatedKnowledge(skeleton.node.title, relatedTitles),
     ])
+
+    // 并发安全校验：检查操作是否仍然有效
+    const currentOp = useOperationStore.getState().getOperation(operationId)
+    if (!currentOp || currentOp.status !== 'pending') {
+      console.log('[OperationService] 操作已被取消或替换，放弃更新')
+      return {
+        success: false,
+        operationId,
+        graphId,
+        error: '操作已取消',
+        wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
+      }
+    }
 
     // ========== Step 3: 更新节点内容 ==========
     // 更新主节点

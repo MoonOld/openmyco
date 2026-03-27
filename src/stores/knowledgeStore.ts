@@ -5,6 +5,8 @@ import { arrayToNodes, generateId } from '@/lib/utils'
 import { createLLMClient } from '@/lib/llm'
 import { useSettingsStore } from './settingsStore'
 import { GraphRepository, storedToRuntime } from '@/lib/storage'
+import type { GraphMutationType } from '@/types/events'
+import { dispatchGraphUpdateEvent } from '@/types/events'
 
 // 操作上下文类型
 export interface OperationContext {
@@ -66,6 +68,8 @@ interface KnowledgeState {
       newNodes?: KnowledgeNode[]
       newEdges?: KnowledgeEdge[]
       graphName?: string
+      mutationType?: GraphMutationType  // 由调用方决定
+      sourceOperationId?: string        // 操作来源追踪
     }
   ) => Promise<UpdateGraphResult>
 }
@@ -350,8 +354,8 @@ export const useKnowledgeStore = create<KnowledgeState>()(
 
       initEmptyGraphWithRoot: (rootNode: KnowledgeNode) => {
         const graph = get().currentGraph
-        if (!graph || graph.nodes.size > 0) {
-          // 不是空图谱，创建新图谱
+        if (!graph || graph.rootId) {
+          // 没有图谱或已有主节点，创建新图谱
           get().createGraph(rootNode)
           return
         }
@@ -431,9 +435,24 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           // 如果是当前图谱，同步更新 currentGraph
           if (isCurrentGraph) {
             set({ currentGraph: graph })
-            // 通知 UI 刷新
-            window.dispatchEvent(new CustomEvent('graph-updated'))
           }
+
+          // 确定 mutationType（调用方优先，否则根据更新内容推断）
+          const hasNewNodes = (updates.newNodes?.length ?? 0) > 0
+          const hasNewEdges = (updates.newEdges?.length ?? 0) > 0
+          const mutationType: GraphMutationType = updates.mutationType ?? (
+            hasNewNodes || hasNewEdges ? 'structure' : 'content'
+          )
+
+          // 触发带 metadata 的事件
+          dispatchGraphUpdateEvent({
+            graphId,
+            mutationType,
+            hasNewNodes,
+            hasNewEdges,
+            sourceOperationId: updates.sourceOperationId,
+            timestamp: Date.now(),
+          })
 
           return {
             success: true,

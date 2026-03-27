@@ -239,6 +239,106 @@ describe('knowledgeStore', () => {
     })
   })
 
+  describe('initEmptyGraphWithRoot', () => {
+    it('should create new graph when no graph exists', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      expect(result.current.currentGraph).toBeNull()
+
+      const rootNode: KnowledgeNode = {
+        id: 'root-node',
+        title: 'Root',
+        description: 'Root node',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      act(() => {
+        result.current.initEmptyGraphWithRoot(rootNode)
+      })
+
+      expect(result.current.currentGraph).not.toBeNull()
+      expect(result.current.currentGraph?.rootId).toBe('root-node')
+      expect(result.current.currentGraph?.nodes.has('root-node')).toBe(true)
+    })
+
+    it('should create new graph when current graph has rootId', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      // 先创建一个有 rootId 的图谱
+      const existingRoot: KnowledgeNode = {
+        id: 'existing-root',
+        title: 'Existing Root',
+        description: 'Existing',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      act(() => {
+        result.current.createGraph(existingRoot)
+      })
+
+      const oldGraphId = result.current.currentGraph?.id
+
+      // 调用 initEmptyGraphWithRoot
+      const newRoot: KnowledgeNode = {
+        id: 'new-root',
+        title: 'New Root',
+        description: 'New',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      act(() => {
+        result.current.initEmptyGraphWithRoot(newRoot)
+      })
+
+      // 应该创建了新图谱（不同的 id）
+      expect(result.current.currentGraph?.id).not.toBe(oldGraphId)
+      expect(result.current.currentGraph?.rootId).toBe('new-root')
+      expect(result.current.currentGraph?.name).toBe('New Root')
+    })
+
+    it('should build on current graph when graph has no rootId (empty graph)', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      // 先创建一个空图谱（没有 rootId）
+      act(() => {
+        result.current.createEmptyGraph()
+      })
+
+      const emptyGraphId = result.current.currentGraph?.id
+      expect(result.current.currentGraph?.rootId).toBe('')
+
+      // 调用 initEmptyGraphWithRoot
+      const rootNode: KnowledgeNode = {
+        id: 'root-node',
+        title: 'Root',
+        description: 'Root node',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      act(() => {
+        result.current.initEmptyGraphWithRoot(rootNode)
+      })
+
+      // 应该在当前图谱上构建（id 不变）
+      expect(result.current.currentGraph?.id).toBe(emptyGraphId)
+      expect(result.current.currentGraph?.rootId).toBe('root-node')
+      expect(result.current.currentGraph?.name).toBe('Root')
+      expect(result.current.currentGraph?.nodes.has('root-node')).toBe(true)
+    })
+  })
+
   describe('createGraph', () => {
     it('should create a new graph with root node', () => {
       const { result } = renderHook(() => useKnowledgeStore())

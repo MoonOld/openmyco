@@ -18,6 +18,7 @@ import { createLLMClient } from '@/lib/llm'
 import { generateId } from '@/lib/utils'
 import type { KnowledgeNode, KnowledgeEdge } from '@/types'
 import { normalizeLLMResponse } from '@/lib/normalizers/llmGraphNormalizer'
+import { dispatchGraphUpdateEvent } from '@/types/events'
 
 // 操作结果
 export interface OperationResult {
@@ -77,7 +78,15 @@ export async function createGraph(topic: string): Promise<OperationResult> {
   // 5. 立即保存到 IndexedDB
   const { GraphRepository } = await import('@/lib/storage')
   await GraphRepository.save(useKnowledgeStore.getState().currentGraph!)
-  window.dispatchEvent(new CustomEvent('graph-updated'))
+
+  // 触发结构变更事件（新图谱创建）
+  dispatchGraphUpdateEvent({
+    graphId,
+    mutationType: 'structure',
+    hasNewNodes: true,
+    sourceOperationId: operationId,
+    timestamp: Date.now(),
+  })
 
   try {
     // 6. 调用 LLM
@@ -123,6 +132,8 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       newNodes: patch.newNodes,
       newEdges: patch.newEdges,
       graphName: patch.graphName,
+      mutationType: 'structure',  // 新建图谱，始终是结构变更
+      sourceOperationId: operationId,
     })
 
     // 9. 更新操作状态
@@ -174,13 +185,25 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
 
   const node = graph.nodes.get(nodeId)!
 
-  // 检查是否已展开或正在加载
-  if (store.expandedNodeIds.has(nodeId) || store.loadingNodes.has(nodeId)) {
+  // 检查是否正在加载
+  if (store.loadingNodes.has(nodeId)) {
     return {
       success: false,
       operationId: '',
       graphId: graph.id,
-      error: '节点已展开或正在加载',
+      error: '节点正在加载中',
+      wasCurrentGraph: true,
+    }
+  }
+
+  // 检查是否已展开（跳过失败节点，允许重试）
+  const isFailed = node.operationStatus === 'failed'
+  if (store.expandedNodeIds.has(nodeId) && !isFailed) {
+    return {
+      success: false,
+      operationId: '',
+      graphId: graph.id,
+      error: '节点已展开',
       wasCurrentGraph: true,
     }
   }
@@ -190,6 +213,17 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
   const loadingNodes = new Set(store.loadingNodes)
   loadingNodes.add(nodeId)
   useKnowledgeStore.setState({ loadingNodes })
+
+  // 如果是重试失败节点，重置状态
+  if (isFailed) {
+    await store.updateGraphById(graph.id, {
+      rootNodeId: nodeId,
+      rootNodeUpdates: {
+        operationStatus: 'pending',
+        operationError: undefined,
+      },
+    })
+  }
 
   const graphId = graph.id
 
@@ -248,12 +282,14 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       }
     })
 
-    // 定向写入骨架（第一阶段）
+    // 定向写入骨架（第一阶段）- 结构变更
     await useKnowledgeStore.getState().updateGraphById(graphId, {
       rootNodeId: nodeId,
       rootNodeUpdates: { expanded: true },
       newNodes: skeletonNodes,
       newEdges: skeletonEdges,
+      mutationType: 'structure',
+      sourceOperationId: operationId,
     })
 
     // ========== Step 2: 并行获取深度信息 ==========
@@ -312,18 +348,22 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       })
     }
 
-    // 定向写入深度信息（第二阶段）
+    // 定向写入深度信息（第二阶段）- 内容更新
     // 先更新主节点
     await useKnowledgeStore.getState().updateGraphById(graphId, {
       rootNodeId: nodeId,
       rootNodeUpdates,
+      mutationType: 'content',
+      sourceOperationId: operationId,
     })
 
-    // 再逐个更新关联节点
+    // 再逐个更新关联节点 - 内容更新
     for (const { nodeId: updateNodeId, updates } of nodeUpdates) {
       await useKnowledgeStore.getState().updateGraphById(graphId, {
         rootNodeId: updateNodeId,
         rootNodeUpdates: updates,
+        mutationType: 'content',
+        sourceOperationId: operationId,
       })
     }
 
@@ -385,6 +425,7 @@ export async function resumePendingOperations(): Promise<void> {
         operationStatus: 'failed',
         operationError: '操作中断，请点击重试',
       },
+      mutationType: 'meta',  // 只是状态更新
     })
   }
 }

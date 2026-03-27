@@ -97,7 +97,7 @@ interface TestResult {
 
 export function SettingsDialog() {
   const { settingsDialogOpen, setSettingsDialogOpen } = useUIStore()
-  const { llmConfig, setLLMConfig, resetSettings } = useSettingsStore()
+  const { llmConfig, setLLMConfig, autoLayout, setAutoLayout, resetSettings } = useSettingsStore()
 
   const [localConfig, setLocalConfig] = useState(llmConfig)
   const [showApiKey, setShowApiKey] = useState(false)
@@ -342,6 +342,24 @@ export function SettingsDialog() {
                   setLocalConfig({ ...localConfig, maxTokens: value })
                 }
               />
+            </div>
+          </div>
+
+          {/* Graph Preferences */}
+          <div className="space-y-3 pt-2 border-t">
+            <h3 className="text-sm font-medium">图谱偏好</h3>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="auto-layout"
+                checked={autoLayout}
+                onChange={(e) => setAutoLayout(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <Label htmlFor="auto-layout" className="text-sm font-normal cursor-help" title="每次探索新节点时进行重新布局">
+                自动布局
+              </Label>
             </div>
           </div>
         </div>

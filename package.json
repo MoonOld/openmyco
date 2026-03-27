@@ -1,0 +1,140 @@
+{
+  "name": "openlearning",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Interactive knowledge graph learning tool powered by LLM",
+  "author": {
+    "name": "MoonOld",
+    "email": "Moonold.h@gmail.com"
+  },
+  "homepage": "https://github.com/openlearning/openlearning",
+  "type": "module",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite --mode electron",
+    "dev:web": "vite --mode web",
+    "dev:electron": "vite --mode electron",
+    "build": "vite build --mode electron && electron-builder",
+    "build:web": "tsc -b && vite build --mode electron",
+    "build:electron": "vite build --mode electron && electron-builder",
+    "build:win": "npm run build:web && electron-builder --win && ./scripts/fix-win-icon.sh",
+    "build:mac": "npm run build:web && electron-builder --mac",
+    "build:linux": "npm run build:web && electron-builder --linux",
+    "build:dir": "npm run build:web && electron-builder --dir && ./scripts/fix-win-icon.sh",
+    "postbuild:win": "./scripts/fix-win-icon.sh",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:api": "node --test ./test-api.ts",
+    "generate:icons": "node scripts/generate-icons.mjs"
+  },
+  "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
+    "@types/dagre": "^0.7.54",
+    "axios": "^1.13.6",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "dexie": "^4.3.0",
+    "dexie-react-hooks": "^4.2.0",
+    "lucide-react": "^1.7.0",
+    "nanoid": "^5.1.7",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "reactflow": "^11.11.4",
+    "tailwind-merge": "^3.5.0",
+    "zustand": "^5.0.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^24.12.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "autoprefixer": "^10.4.27",
+    "electron": "^41.0.4",
+    "electron-builder": "^26.8.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.4.0",
+    "jsdom": "^29.0.1",
+    "png-to-ico": "^3.0.1",
+    "postcss": "^8.5.8",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.57.0",
+    "vite": "^8.0.1",
+    "vite-plugin-electron": "^0.29.1",
+    "vitest": "^4.1.2"
+  },
+  "build": {
+    "appId": "com.openlearning.app",
+    "productName": "OpenLearning",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "build/icon.ico",
+        "to": "icon.ico"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64",
+            "universal"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "category": "public.app-category.education"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Education"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

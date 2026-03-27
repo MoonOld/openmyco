@@ -4,7 +4,27 @@ import type { KnowledgeGraph, KnowledgeNode, KnowledgeEdge } from '@/types'
 import { arrayToNodes, generateId } from '@/lib/utils'
 import { createLLMClient } from '@/lib/llm'
 import { useSettingsStore } from './settingsStore'
-import { GraphRepository } from '@/lib/storage'
+import { GraphRepository, storedToRuntime } from '@/lib/storage'
+
+// 操作上下文类型
+export interface OperationContext {
+  id: string                    // 操作唯一 ID
+  targetGraphId: string         // 目标图谱 ID
+  tempNodeId: string            // 临时/占位节点 ID
+  topic: string                 // 用户输入的主题
+  status: 'pending' | 'success' | 'failed' | 'cancelled'
+  startedAt: Date
+  completedAt?: Date
+  error?: string
+}
+
+// 定向更新图谱的结果
+export interface UpdateGraphResult {
+  success: boolean
+  isCurrentGraph: boolean       // 是否是当前显示的图谱
+  graphName: string             // 图谱名称（用于 toast 提示）
+  error?: string
+}
 
 interface KnowledgeState {
   // State
@@ -36,6 +56,18 @@ interface KnowledgeState {
   setError: (error: string | null) => void
   setFocusMode: (enabled: boolean) => void
   setFocusDepth: (depth: number) => void
+
+  // 定向更新方法（不依赖 currentGraph）
+  updateGraphById: (
+    graphId: string,
+    updates: {
+      rootNodeId: string
+      rootNodeUpdates: Partial<KnowledgeNode>
+      newNodes?: KnowledgeNode[]
+      newEdges?: KnowledgeEdge[]
+      graphName?: string
+    }
+  ) => Promise<UpdateGraphResult>
 }
 
 export const useKnowledgeStore = create<KnowledgeState>()(
@@ -338,6 +370,85 @@ export const useKnowledgeStore = create<KnowledgeState>()(
       setError: (error) => set({ error }),
       setFocusMode: (enabled) => set({ focusMode: enabled }),
       setFocusDepth: (depth) => set({ focusDepth: depth }),
+
+      /**
+       * 定向更新图谱（不依赖 currentGraph）
+       * 用于异步操作完成后，将数据写入正确的图谱
+       */
+      updateGraphById: async (graphId, updates) => {
+        try {
+          // 从 IndexedDB 加载目标图谱
+          const stored = await GraphRepository.getById(graphId)
+          if (!stored) {
+            return {
+              success: false,
+              isCurrentGraph: false,
+              graphName: '',
+              error: '目标图谱不存在',
+            }
+          }
+
+          const graph = storedToRuntime(stored)
+          const isCurrentGraph = get().currentGraph?.id === graphId
+
+          // 更新根节点
+          const rootNode = graph.nodes.get(updates.rootNodeId)
+          if (rootNode) {
+            graph.nodes.set(updates.rootNodeId, {
+              ...rootNode,
+              ...updates.rootNodeUpdates,
+              updatedAt: new Date(),
+            })
+          }
+
+          // 添加新节点
+          if (updates.newNodes) {
+            updates.newNodes.forEach((node) => {
+              graph.nodes.set(node.id, node)
+            })
+          }
+
+          // 添加新边
+          if (updates.newEdges) {
+            const existingEdgeIds = new Set(graph.edges.map((e) => e.id))
+            updates.newEdges.forEach((edge) => {
+              if (!existingEdgeIds.has(edge.id)) {
+                graph.edges.push(edge)
+              }
+            })
+          }
+
+          // 更新图谱名称
+          if (updates.graphName) {
+            graph.name = updates.graphName
+          }
+
+          graph.updatedAt = new Date()
+
+          // 保存到 IndexedDB
+          await GraphRepository.save(graph)
+
+          // 如果是当前图谱，同步更新 currentGraph
+          if (isCurrentGraph) {
+            set({ currentGraph: graph })
+            // 通知 UI 刷新
+            window.dispatchEvent(new CustomEvent('graph-updated'))
+          }
+
+          return {
+            success: true,
+            isCurrentGraph,
+            graphName: graph.name,
+          }
+        } catch (error) {
+          return {
+            success: false,
+            isCurrentGraph: false,
+            graphName: '',
+            error: error instanceof Error ? error.message : '更新图谱失败',
+          }
+        }
+      },
     }),
     {
       name: 'knowledge-storage',

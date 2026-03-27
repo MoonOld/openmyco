@@ -4,7 +4,7 @@ import { Input, Button } from '@/components/ui'
 import { useKnowledgeStore, useSettingsStore } from '@/stores'
 import { createLLMClient, normalizeLLMResponse } from '@/lib/llm'
 import { generateId } from '@/lib/utils'
-import type { KnowledgeEdge } from '@/types'
+import type { KnowledgeEdge, KnowledgeNode } from '@/types'
 import { GraphRepository } from '@/lib/storage'
 
 interface ChatInputProps {
@@ -17,7 +17,7 @@ export function ChatInput({ className }: ChatInputProps) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   const { llmConfig } = useSettingsStore()
-  const { addNodes, addEdges, initEmptyGraphWithRoot, updateNode, setError } = useKnowledgeStore()
+  const { initEmptyGraphWithRoot, setError } = useKnowledgeStore()
 
   // Focus input on mount
   useEffect(() => {
@@ -46,11 +46,20 @@ export function ChatInput({ className }: ChatInputProps) {
     setInput('')
     setError(null)
 
-    // 记录临时节点 ID（用于后续 normalizer）
-    let tempNodeId: string | null = null
+    // ========== 1. 记录操作上下文 ==========
+    const tempNodeId = generateId()
+    let targetGraphId: string
 
-    // 记录目标图谱 ID（用于检测用户是否切换了图谱）
-    let targetGraphId: string | null = null
+    // 创建临时节点（显示"正在生成"状态）
+    const tempNode: KnowledgeNode = {
+      id: tempNodeId,
+      title: topic,
+      description: '正在生成知识图谱...',
+      type: 'concept',
+      expanded: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
 
     // 检查当前图谱状态
     const graph = useKnowledgeStore.getState().currentGraph
@@ -58,21 +67,8 @@ export function ChatInput({ className }: ChatInputProps) {
 
     if (!graph || !isEmpty) {
       // 没有图谱 或 图谱不为空 → 创建新图谱
-      tempNodeId = generateId()
-
-      // 创建空图谱并设置加载状态
-      initEmptyGraphWithRoot({
-        id: tempNodeId,
-        title: topic,
-        description: '正在生成知识图谱...',
-        type: 'concept',
-        expanded: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-
-      // 记录目标图谱 ID
-      targetGraphId = useKnowledgeStore.getState().currentGraph?.id ?? null
+      initEmptyGraphWithRoot(tempNode)
+      targetGraphId = useKnowledgeStore.getState().currentGraph!.id
 
       // 立即保存到 IndexedDB 并通知侧边栏刷新
       const { currentGraph: newGraph } = useKnowledgeStore.getState()
@@ -82,26 +78,16 @@ export function ChatInput({ className }: ChatInputProps) {
       }
     } else {
       // 图谱为空 → 直接往空图谱里添加根节点
-      tempNodeId = generateId()
       targetGraphId = graph.id
-
-      // 在空图谱中初始化根节点
-      initEmptyGraphWithRoot({
-        id: tempNodeId,
-        title: topic,
-        description: '正在生成知识图谱...',
-        type: 'concept',
-        expanded: false,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
+      initEmptyGraphWithRoot(tempNode)
     }
+
+    console.log('[ChatInput] Operation context:', { targetGraphId, tempNodeId, topic })
 
     try {
       const client = createLLMClient(llmConfig)
 
-      // ========== 新架构：使用 V2 + Normalizer ==========
-      // 调用 V2 API，LLM 返回 ref (root, n1, n2...) 而非 UUID
+      // ========== 2. 调用 LLM（可能耗时较长）==========
       const response = await client.generateKnowledgeGraphV2(topic)
 
       if (!response) {
@@ -111,61 +97,12 @@ export function ChatInput({ className }: ChatInputProps) {
 
       console.log('[ChatInput] LLM V2 response:', response)
 
-      // 检查用户是否切换了图谱
-      const currentGraphId = useKnowledgeStore.getState().currentGraph?.id
-      if (currentGraphId !== targetGraphId) {
-        console.warn('[ChatInput] 用户已切换图谱，取消当前生成操作')
-        setError('已切换到其他图谱，生成已取消')
-        return
-      }
-
-      // 获取临时节点 ID（作为 root 的 canonical ID）
-      const graph = useKnowledgeStore.getState().currentGraph
-      if (!graph || graph.nodes.size === 0) {
-        setError('图谱状态异常')
-        return
-      }
-
-      const rootCanonicalId = tempNodeId || Array.from(graph.nodes.values())[0]!.id
-      console.log('[ChatInput] Root canonical ID:', rootCanonicalId)
-
+      // ========== 3. 定向更新目标图谱（核心改动）==========
       // 使用 normalizer 转换 ref -> localId
-      const normalized = normalizeLLMResponse(response, rootCanonicalId)
-      console.log('[ChatInput] Normalized response:', normalized)
-
-      // 更新临时节点内容（保留原 ID）
+      const normalized = normalizeLLMResponse(response, tempNodeId)
       const { rootNode, relatedNodes, edges: normalizedEdges } = normalized
 
-      updateNode(rootCanonicalId, {
-        title: rootNode.title,
-        description: rootNode.description,
-        type: rootNode.type,
-        difficulty: rootNode.difficulty,
-        estimatedTime: rootNode.estimatedTime,
-        resources: rootNode.resources,
-        tags: rootNode.tags,
-        expanded: true,
-      })
-
-      // 标记为已展开
-      useKnowledgeStore.getState().setExpanded(rootCanonicalId, true)
-
-      // 更新图谱名称
-      const currentGraphState = useKnowledgeStore.getState().currentGraph
-      if (currentGraphState) {
-        useKnowledgeStore.setState({
-          currentGraph: {
-            ...currentGraphState,
-            name: rootNode.title,
-          }
-        })
-      }
-
-      // 添加关联节点
-      console.log('[ChatInput] Adding related nodes:', relatedNodes.length)
-      addNodes(relatedNodes)
-
-      // 创建边（使用本地 canonical ID）
+      // 准备边数据
       const knowledgeEdges: KnowledgeEdge[] = normalizedEdges.map((edge) => ({
         id: generateId(),
         source: edge.source,
@@ -174,19 +111,38 @@ export function ChatInput({ className }: ChatInputProps) {
         weight: edge.weight,
       }))
 
-      console.log('[ChatInput] Adding edges:', knowledgeEdges.length)
-      addEdges(knowledgeEdges)
+      // 使用定向更新方法
+      const result = await useKnowledgeStore.getState().updateGraphById(targetGraphId, {
+        rootNodeId: tempNodeId,
+        rootNodeUpdates: {
+          title: rootNode.title,
+          description: rootNode.description,
+          type: rootNode.type,
+          difficulty: rootNode.difficulty,
+          estimatedTime: rootNode.estimatedTime,
+          resources: rootNode.resources,
+          tags: rootNode.tags,
+          expanded: true,
+        },
+        newNodes: relatedNodes,
+        newEdges: knowledgeEdges,
+        graphName: rootNode.title,
+      })
 
-      // Debug: 检查最终状态
-      const finalGraph = useKnowledgeStore.getState().currentGraph
-      console.log('[ChatInput] Final graph - nodes:', finalGraph?.nodes.size, 'edges:', finalGraph?.edges.length)
-
-      // 保存到存储
-      const { currentGraph: updatedGraph } = useKnowledgeStore.getState()
-      if (updatedGraph) {
-        await GraphRepository.save(updatedGraph)
-        window.dispatchEvent(new CustomEvent('graph-updated'))
+      if (!result.success) {
+        setError(result.error || '更新图谱失败')
+        return
       }
+
+      // ========== 4. 如果用户切换了图谱，显示提示 ==========
+      if (!result.isCurrentGraph) {
+        console.log(`[ChatInput] 图谱 "${result.graphName}" 已在后台生成完成`)
+        // TODO: 使用 toast 组件替代
+        setError(`图谱 "${result.graphName}" 已生成完成`)
+      }
+
+      console.log('[ChatInput] Graph update result:', result)
+
     } catch (error) {
       console.error('Failed to generate knowledge graph:', error)
       setError(error instanceof Error ? error.message : '生成知识图谱时出错')

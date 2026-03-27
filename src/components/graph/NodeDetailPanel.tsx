@@ -11,13 +11,16 @@ const typeIcons = {
   theory: Code,
 }
 
-const relationIcons = {
+const relationIcons: Record<string, { icon: typeof Minus; color: string; label: string }> = {
   prerequisite: { icon: ArrowLeft, color: 'text-red-500', label: '前置知识' },
   postrequisite: { icon: ArrowRight, color: 'text-green-500', label: '后置知识' },
   related: { icon: Minus, color: 'text-blue-500', label: '相关知识' },
   depends: { icon: Minus, color: 'text-purple-500', label: '依赖关系' },
   contains: { icon: Minus, color: 'text-orange-500', label: '包含' },
 }
+
+// 默认关系信息（防止未定义的类型导致报错）
+const defaultRelationInfo = { icon: Minus, color: 'text-gray-500', label: '关系' }
 
 interface NodeDetailPanelProps {
   className?: string
@@ -113,7 +116,7 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
               <h4 className="text-sm font-medium mb-2">前置关系</h4>
               <div className="space-y-2">
                 {incomingEdges.map((edge) => {
-                  const relationInfo = relationIcons[edge.type]
+                  const relationInfo = relationIcons[edge.type] || defaultRelationInfo
                   const RelationIcon = relationInfo.icon
                   const sourceNode = currentGraph?.nodes.get(edge.source)
 
@@ -149,7 +152,7 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
               <h4 className="text-sm font-medium mb-2">后续关系</h4>
               <div className="space-y-2">
                 {outgoingEdges.map((edge) => {
-                  const relationInfo = relationIcons[edge.type]
+                  const relationInfo = relationIcons[edge.type] || defaultRelationInfo
                   const RelationIcon = relationInfo.icon
                   const targetNode = currentGraph?.nodes.get(edge.target)
 

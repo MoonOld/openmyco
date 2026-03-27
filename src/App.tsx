@@ -1,12 +1,15 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { MainLayout } from './components/layout'
 import { ChatInterface } from './components/chat'
 import { SettingsDialog, ExportDialog, ImportDialog } from './components/settings'
 import { initDB } from './lib/storage'
-import { useSettingsStore } from './stores'
+import { useSettingsStore, useKnowledgeStore } from './stores'
+import { resumePendingOperations } from './services/operationService'
 
 function App() {
   const { theme } = useSettingsStore()
+  const { currentGraph } = useKnowledgeStore()
+  const resumedGraphIdRef = useRef<string | null>(null)
 
   // Initialize database
   useEffect(() => {
@@ -14,6 +17,16 @@ function App() {
       console.error('Failed to initialize database:', error)
     })
   }, [])
+
+  // Resume pending operations when graph changes
+  useEffect(() => {
+    if (currentGraph && currentGraph.id !== resumedGraphIdRef.current) {
+      resumedGraphIdRef.current = currentGraph.id
+      resumePendingOperations().catch((error) => {
+        console.error('Failed to resume pending operations:', error)
+      })
+    }
+  }, [currentGraph])
 
   // Apply theme
   useEffect(() => {

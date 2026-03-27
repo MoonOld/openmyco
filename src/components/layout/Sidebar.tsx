@@ -81,6 +81,10 @@ export function Sidebar({ className }: { className?: string }) {
   const handleDeleteGraph = async (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation()
 
+    // 确认删除
+    const confirmed = window.confirm('确定要删除这个图谱吗？此操作不可撤销。')
+    if (!confirmed) return
+
     // 先记录是否是当前图谱
     const isCurrentGraph = currentGraph?.id === id
 
@@ -102,6 +106,10 @@ export function Sidebar({ className }: { className?: string }) {
 
   // Reset all data
   const handleResetAll = async () => {
+    // 确认删除全部数据
+    const confirmed = window.confirm('确定要删除所有数据吗？此操作不可撤销，所有图谱都将被清空！')
+    if (!confirmed) return
+
     try {
       await resetDB()
       clearGraph()

@@ -18,6 +18,7 @@ import { useKnowledgeStore } from '@/stores'
 import { GraphRepository } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 import type { KnowledgeNode } from '@/types'
+import { expandNode } from '@/services/operationService'
 import { GraphNode } from './GraphNode'
 import { GraphEdge as GraphEdgeComponent } from './GraphEdge'
 import { NodeEditDialog } from './NodeEditDialog'
@@ -117,7 +118,6 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     focusMode,
     focusDepth,
     selectNode,
-    expandNode,
     updateNode,
     setFocusMode,
   } = useKnowledgeStore()
@@ -252,7 +252,7 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     )
 
     return { initialNodes: layoutedNodes, initialEdges: layoutedEdges }
-  }, [currentGraph, expandedNodeIds, selectedNodeId, loadingNodes, visibleNodeIds, expandNode, selectNode])
+  }, [currentGraph, expandedNodeIds, selectedNodeId, loadingNodes, visibleNodeIds, selectNode])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)

@@ -1,3 +1,6 @@
+// Operation status for async operations
+export type OperationStatus = 'pending' | 'success' | 'failed'
+
 // Knowledge node type
 export interface KnowledgeNode {
   id: string
@@ -18,6 +21,9 @@ export interface KnowledgeNode {
   examples?: Array<{ title: string; code?: string; explanation: string }>
   bestPractices?: string[]
   commonMistakes?: string[]
+  // Operation status (for async operations like expand/create)
+  operationStatus?: OperationStatus
+  operationError?: string
 }
 
 // Relation type

@@ -37,34 +37,23 @@ AI 生成知识网络
 - 🔄 **递归扩展** - 点击节点可继续深入探索
 - 💾 **本地存储** - 数据存储在本地 IndexedDB，保护隐私
 - 🌐 **离线可用** - 生成后可离线查看和学习
-- 🖥️ **跨平台** - 支持 Web 和 Electron 桌面应用
+- 🖥️ **跨平台桌面** - 支持 Windows、macOS、Linux
 
 ## 快速开始
-
-### Web 模式（推荐）
 
 ```bash
 # 安装依赖
 npm install
 
-# 启动开发服务器
-npm run dev:web
-# 访问 http://localhost:5173
-```
-
-### Electron 桌面模式
-
-```bash
+# 启动 Electron 桌面应用（推荐）
 npm run dev:electron
 ```
+
+> **注意**: Web 模式 (`npm run dev:web`) 因浏览器 CORS 限制，无法直接调用 LLM API。推荐使用 Electron 模式。
 
 ## 构建
 
 ```bash
-# Web 版本
-npm run build:web
-
-# Electron 应用
 npm run build        # 当前平台
 npm run build:win    # Windows
 npm run build:mac    # macOS

@@ -93,6 +93,9 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           currentGraph: graph,
           selectedNodeId: null,
           expandedNodeIds: new Set(),
+          // 切换视图时清除 loading 状态（后台操作会继续执行）
+          loadingNodes: new Set(),
+          loading: false,
         }),
 
       selectNode: (nodeId) => set({ selectedNodeId: nodeId }),

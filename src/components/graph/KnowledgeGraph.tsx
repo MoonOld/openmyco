@@ -8,13 +8,14 @@ import ReactFlow, {
   ConnectionMode,
   useNodesState,
   useEdgesState,
+  useReactFlow,
   addEdge,
   Panel,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 import dagre from '@dagrejs/dagre'
 import { RefreshCw } from 'lucide-react'
-import { useKnowledgeStore, useSettingsStore } from '@/stores'
+import { useKnowledgeStore, useSettingsStore, useUIStore } from '@/stores'
 import { GraphRepository } from '@/lib/storage'
 import { cn } from '@/lib/utils'
 import type { KnowledgeNode } from '@/types'
@@ -125,6 +126,32 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
   } = useKnowledgeStore()
 
   const { autoLayout } = useSettingsStore()
+  const { addToast } = useUIStore()
+  const { fitView } = useReactFlow()
+
+  // 切换图谱时自动 fitView
+  useEffect(() => {
+    if (currentGraph) {
+      // 延迟执行确保节点已渲染
+      const timer = setTimeout(() => {
+        fitView({ duration: 300, padding: 0.2 })
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [currentGraph, fitView])
+
+  // 处理节点展开（包装 expandNode 以显示 toast）
+  const handleExpandNode = useCallback(async (nodeId: string) => {
+    const result = await expandNode(nodeId)
+    // 如果操作成功但用户已切换到其他图谱，显示 toast 提示
+    if (result.success && !result.wasCurrentGraph) {
+      addToast({
+        type: 'success',
+        title: '节点展开完成',
+        description: `图谱 "${result.graphName}" 中的节点已在后台展开完成`,
+      })
+    }
+  }, [addToast])
 
   // 编辑弹窗状态
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
@@ -219,8 +246,8 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
       position: node.position || { x: 0, y: 0 },
       data: {
         knowledgeNode: { ...node, expanded: expandedNodeIds.has(node.id) },
-        onExpand: expandNode,
-        onRetry: expandNode,
+        onExpand: handleExpandNode,
+        onRetry: handleExpandNode,
         onSelect: selectNode,
         onEdit: setEditingNodeId,
         selected: selectedNodeId === node.id,
@@ -257,7 +284,7 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     )
 
     return { initialNodes: layoutedNodes, initialEdges: layoutedEdges }
-  }, [currentGraph, expandedNodeIds, selectedNodeId, loadingNodes, visibleNodeIds, selectNode])
+  }, [currentGraph, expandedNodeIds, selectedNodeId, loadingNodes, visibleNodeIds, selectNode, handleExpandNode])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)

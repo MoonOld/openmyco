@@ -1,8 +1,8 @@
 {
-  "name": "openlearning",
+  "name": "openmyco",
   "private": true,
   "version": "0.1.0",
-  "description": "Interactive knowledge graph learning tool powered by LLM",
+  "description": "AI-powered knowledge graph learning tool - Let knowledge grow like mycelium",
   "author": {
     "name": "MoonOld",
     "email": "Moonold.h@gmail.com"
@@ -75,8 +75,8 @@
     "vitest": "^4.1.2"
   },
   "build": {
-    "appId": "com.openlearning.app",
-    "productName": "OpenLearning",
+    "appId": "app.openmyco",
+    "productName": "OpenMyco",
     "directories": {
       "output": "release",
       "buildResources": "build"

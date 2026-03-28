@@ -1,4 +1,4 @@
-# OpenMyco
+<h1 align="center">OpenMyco</h1>
 
 <p align="center">
   <a href="README_EN.md">English</a> | <b>中文</b>

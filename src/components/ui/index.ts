@@ -23,3 +23,4 @@ export {
 export { Toast, ToastContainer } from './toast'
 export { Select } from './select'
 export { ResizablePanel } from './ResizablePanel'
+export { Logo } from './Logo'

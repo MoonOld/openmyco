@@ -1,5 +1,5 @@
-import { Brain, Settings, Download, Upload, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose } from 'lucide-react'
-import { Button } from '@/components/ui'
+import { Settings, Download, Upload, PanelLeft, PanelLeftClose, PanelRight, PanelRightClose } from 'lucide-react'
+import { Button, Logo } from '@/components/ui'
 import { useUIStore, useSettingsStore } from '@/stores'
 
 export function Header() {
@@ -23,7 +23,7 @@ export function Header() {
               <PanelLeftClose className="h-4 w-4" />
             )}
           </Button>
-          <Brain className="h-6 w-6 text-primary" />
+          <Logo className="h-6 w-6" />
           <span className="font-bold text-lg">OpenMyco</span>
         </div>
 

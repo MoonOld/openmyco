@@ -1,7 +1,7 @@
 # OpenMyco
 
 <p align="center">
-  <b>English</b> | <a href="README_CN.md">中文</a>
+  <a href="README_EN.md">English</a> | <b>中文</b>
 </p>
 
 <p align="center">
@@ -9,23 +9,23 @@
 </p>
 
 <p align="center">
-  <strong>Let Knowledge Grow Like Mycelium</strong>
+  <strong>让知识像菌丝一样生长</strong>
 </p>
 
 <p align="center">
-  <em>让知识像菌丝一样生长</em>
+  <em>Let knowledge grow like mycelium.</em>
 </p>
 
 ---
 
-## What is OpenMyco?
+## 什么是 OpenMyco？
 
-**OpenMyco** is an AI-powered knowledge graph learning tool. Enter any topic, and the AI automatically builds a related knowledge network, visualized as an interactive graph with recursive exploration support.
+**OpenMyco** 是一个 AI 驱动的知识图谱学习工具。输入任意知识点，AI 将自动构建相关知识网络，以可视化图谱展示，支持递归扩展探索。
 
 ```
-Input: "React Hooks"
+输入: "React Hooks"
      ↓
-AI generates knowledge network
+AI 生成知识网络
      ↓
      useState ── useEffect
         │           │
@@ -34,68 +34,68 @@ AI generates knowledge network
      useContext ── useMemo
 ```
 
-## Key Features
+## 核心特性
 
-- 🧠 **AI-Powered** - Automatically builds knowledge structure through LLM
-- 🕸️ **Knowledge Graph** - Visualizes relationships between concepts
-- 🔄 **Recursive Exploration** - Click nodes to dive deeper
-- 💾 **Local Storage** - Data stored in IndexedDB, privacy protected
-- 🌐 **Offline Available** - View and learn offline after generation
-- 🖥️ **Cross-Platform Desktop** - Windows, macOS, Linux supported
+- 🧠 **AI 驱动** - 通过 LLM 问答自动构建知识体系
+- 🕸️ **知识图谱** - 可视化展示知识点之间的关系
+- 🔄 **递归扩展** - 点击节点可继续深入探索
+- 💾 **本地存储** - 数据存储在本地 IndexedDB，保护隐私
+- 🌐 **离线可用** - 生成后可离线查看和学习
+- 🖥️ **跨平台桌面** - 支持 Windows、macOS、Linux
 
-## Quick Start
+## 快速开始
 
 ```bash
-# Install dependencies
+# 安装依赖
 npm install
 
-# Start Electron desktop app (recommended)
+# 启动 Electron 桌面应用（推荐）
 npm run dev:electron
 ```
 
-> **Note**: Web mode (`npm run dev:web`) cannot directly call LLM APIs due to browser CORS restrictions. Electron mode is recommended.
+> **注意**: Web 模式 (`npm run dev:web`) 因浏览器 CORS 限制，无法直接调用 LLM API。推荐使用 Electron 模式。
 
-## Build
+## 构建
 
 ```bash
-npm run build        # Current platform
+npm run build        # 当前平台
 npm run build:win    # Windows
 npm run build:mac    # macOS
 npm run build:linux  # Linux
 ```
 
-## Tech Stack
+## 技术栈
 
-| Technology | Purpose |
-|------------|---------|
-| React 19 + TypeScript | Frontend Framework |
-| Zustand | State Management |
-| React Flow | Graph Visualization |
-| Dexie.js | IndexedDB Storage |
-| Tailwind CSS + shadcn/ui | UI Components |
-| Electron | Desktop Application |
+| 技术 | 用途 |
+|------|------|
+| React 19 + TypeScript | 前端框架 |
+| Zustand | 状态管理 |
+| React Flow | 图可视化 |
+| Dexie.js | IndexedDB 存储 |
+| Tailwind CSS + shadcn/ui | UI 组件 |
+| Electron | 桌面应用 |
 
-## Brand Story
+## 品牌故事
 
-**Myco** comes from *Mycelium* - the underground fungal network.
+**Myco** 来自 *Mycelium*（菌丝网络）。
 
-Mycelium is nature's most fascinating network structure. Beneath the surface, countless tiny filaments interconnect, forming vast networks for information and nutrient exchange. This is the perfect metaphor for knowledge learning:
+菌丝是自然界最神奇的网络结构——在地表之下，无数微小的菌丝相互连接，形成庞大的信息与营养交换网络。这正是知识学习的完美隐喻：
 
-- **Distributed** - Knowledge points are inherently interconnected
-- **Organic Growth** - From one point, the entire network grows
-- **Resilience** - More connections mean a stronger network
+- **分布式** - 知识点之间本就相互关联
+- **有机生长** - 从一个点，长出整片网络
+- **强健性** - 连接越多，网络越稳固
 
-> "Knowledge is like mycelium—invisible yet everywhere. One thought, and everything connects."
+> "知识就像菌丝，看不见却无处不在，一念起，万物相连。"
 
-## Documentation
+## 开发文档
 
-Detailed documentation in the `docs/` directory:
+详细文档请参考 `docs/` 目录：
 
-- [Product Spec](docs/SPEC.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Development Guide](docs/DEVELOPMENT.md)
-- [Testing](docs/TESTING.md)
-- [Build Guide](BUILD.md)
+- [产品规格](docs/SPEC.md)
+- [架构设计](docs/ARCHITECTURE.md)
+- [开发指南](docs/DEVELOPMENT.md)
+- [测试文档](docs/TESTING.md)
+- [构建指南](BUILD.md)
 
 ## License
 

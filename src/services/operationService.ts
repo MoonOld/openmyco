@@ -95,12 +95,21 @@ export async function createGraph(topic: string): Promise<OperationResult> {
 
     if (!response) {
       useOperationStore.getState().failOperation(operationId, 'LLM 未返回数据')
+      // 更新主节点状态为失败
+      await useKnowledgeStore.getState().updateGraphById(graphId, {
+        rootNodeId: tempNodeId,
+        rootNodeUpdates: {
+          operationStatus: 'failed',
+          operationError: '未能获取知识图谱，请重试',
+        },
+        mutationType: 'meta',
+      })
       return {
         success: false,
         operationId,
         graphId,
         error: '未能获取知识图谱，请重试',
-        wasCurrentGraph: false,
+        wasCurrentGraph: true,
       }
     }
 
@@ -156,12 +165,21 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       operationId,
       error instanceof Error ? error.message : '未知错误'
     )
+    // 更新主节点状态为失败
+    await useKnowledgeStore.getState().updateGraphById(graphId, {
+      rootNodeId: tempNodeId,
+      rootNodeUpdates: {
+        operationStatus: 'failed',
+        operationError: error instanceof Error ? error.message : '生成知识图谱时出错',
+      },
+      mutationType: 'meta',
+    })
     return {
       success: false,
       operationId,
       graphId,
       error: error instanceof Error ? error.message : '生成知识图谱时出错',
-      wasCurrentGraph: false,
+      wasCurrentGraph: true,
     }
   }
 }

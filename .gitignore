@@ -34,3 +34,9 @@ coverage/
 *.njsproj
 *.sln
 *.sw?
+
+# Claude Code 本地配置（可能包含 API keys）
+.claude/settings.local.json
+
+# Codex CLI 本地缓存
+.codex/

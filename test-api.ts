@@ -19,9 +19,9 @@ import { request } from 'undici'
 
 const API_KEY = process.env.OPENAI_API_KEY || ''
 const BASE_URL = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1'
-const MODEL = process.env.OPENAI_MODEL || 'codex-mini-latest'
+const MODEL = process.env.OPENAI_MODEL || 'gpt-5.3-codex'
 // 支持的端点列表，按优先级排序
-const POSSIBLE_ENDPOINTS = ['chat/completions', 'chat/responses']
+const POSSIBLE_ENDPOINTS = ['chat/completions', 'responses']
 const USER_ENDPOINT = process.env.OPENAI_ENDPOINT || ''
 
 interface TestResult {

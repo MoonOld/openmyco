@@ -146,7 +146,7 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     // 如果操作成功但用户已切换到其他图谱，显示 toast 提示
     if (result.success && !result.wasCurrentGraph) {
       addToast({
-        type: 'success',
+        variant: 'default',
         title: '节点展开完成',
         description: `图谱 "${result.graphName}" 中的节点已在后台展开完成`,
       })

@@ -345,6 +345,36 @@ export function SettingsDialog() {
             </div>
           </div>
 
+          {/* Advanced Settings */}
+          <div className="space-y-3 pt-2 border-t">
+            <h3 className="text-sm font-medium">高级设置</h3>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="max-concurrency" className="text-sm font-normal">
+                  最大并发数
+                </Label>
+                <span className="text-xs text-muted-foreground">
+                  {localConfig.maxConcurrency ?? 5} / 10
+                </span>
+              </div>
+              <input
+                type="range"
+                id="max-concurrency"
+                min={1}
+                max={10}
+                value={localConfig.maxConcurrency ?? 5}
+                onChange={(e) =>
+                  setLocalConfig({ ...localConfig, maxConcurrency: parseInt(e.target.value) })
+                }
+                className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
+              <p className="text-xs text-muted-foreground">
+                限制同时进行的 API 请求数量。较低的值可避免触发 API 速率限制。
+              </p>
+            </div>
+          </div>
+
           {/* Graph Preferences */}
           <div className="space-y-3 pt-2 border-t">
             <h3 className="text-sm font-medium">图谱偏好</h3>

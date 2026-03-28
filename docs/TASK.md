@@ -156,11 +156,11 @@
 #### PR P2-3: 文档与实现对齐
 - **标题**: 架构/开发/测试文档同步
 - **改动文件**:
-  - `docs/ARCHITECTURE.md`
-  - `docs/DEVELOPMENT.md`
-  - `docs/TESTING.md`
-  - `docs/TASK.md`
-  - `AGENTS.md`
+  - [docs/ARCHITECTURE.md](./ARCHITECTURE.md)
+  - [docs/DEVELOPMENT.md](./DEVELOPMENT.md)
+  - [docs/TESTING.md](./TESTING.md)
+  - [docs/TASK.md](./TASK.md)
+  - [AGENTS.md](../AGENTS.md)
 - **改动内容**:
   1. 同步最新分层：`UI -> Application -> Store/Repository/LLM`
   2. 更新并发模型、节点生命周期、测试矩阵
@@ -174,7 +174,6 @@
 
 ## Bug 修复
 
-- [ ] **LLM Client 测试失败** - `src/lib/llm/__tests__/client.test.ts` endpoint 探测 mock 问题
 - [ ] **LLM 知识内容深度** - 当前 LLM 返回的知识太浅薄，只有性质描述
 - [ ] **WSL2 构建 Windows 安装包** - NSIS 多架构打包兼容性问题，推荐 GitHub Actions
 - [ ] **知识图谱布局优化** - dagre 布局算法有时会产生不理想的结果

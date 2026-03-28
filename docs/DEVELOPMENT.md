@@ -174,13 +174,7 @@ import db from './src/lib/storage/db'
 db.graphs.toArray().then(graphs => console.log(graphs))
 ```
 
-### 3. LLM API 调试
-```typescript
-// 开启详细日志
-localStorage.setItem('debug', 'true')
-```
-
-### 4. Electron 调试
+### 3. Electron 调试
 - 按 `Ctrl+Shift+I` (Windows/Linux) 或 `Cmd+Option+I` (Mac) 打开 DevTools
 - 主进程日志在终端中查看
 - 渲染进程使用浏览器 DevTools
@@ -230,9 +224,11 @@ npm run build
 npm run preview
 
 # Electron（运行未打包版本）
-./release/linux-unpacked/openmyco  # Linux
-./OpenMyco.app                    # macOS
-OpenMyco.exe                      # Windows
+./release/linux-unpacked/openmyco         # Linux
+./release/mac/OpenMyco.app                # macOS（x64/universal）
+./release/mac-arm64/OpenMyco.app          # macOS（Apple Silicon）
+./release/win-unpacked/OpenMyco.exe       # Windows x64
+./release/win-arm64-unpacked/OpenMyco.exe # Windows ARM64
 ```
 
 ### 4. 提交代码
@@ -251,7 +247,7 @@ git push
 |---------|---------------|
 | 新功能 | `docs/SPEC.md` + `docs/ARCHITECTURE.md` |
 | API 变更 | `docs/ARCHITECTURE.md` + `docs/DEVELOPMENT.md` |
-| 构建配置 | `docs/DEVELOPMENT.md` + `CLAUDE.md` |
+| 开发流程/构建配置 | `docs/DEVELOPMENT.md` + `AGENTS.md` + `docs/TASK.md` |
 | 新依赖 | `docs/ARCHITECTURE.md` |
 
 ## 相关文档

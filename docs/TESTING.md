@@ -8,6 +8,8 @@ npm run test:run       # 运行一次所有测试
 npm run test:coverage  # 生成覆盖率报告
 ```
 
+> 覆盖率统计依赖 `@vitest/coverage-v8`，执行 `npm run test:coverage` 前需确保该依赖已安装。
+
 ## 测试覆盖范围
 
 ### 当前覆盖
@@ -16,6 +18,8 @@ npm run test:coverage  # 生成覆盖率报告
 |------|--------|----------|
 | lib/utils.ts | ~90% | lib/__tests__/utils.test.ts |
 | lib/llm/parsers.ts | ~95% | lib/llm/__tests__/parsers.test.ts |
+| lib/llm/client.ts | 持续维护 | lib/llm/__tests__/client.test.ts |
+| services/operationService.ts | 持续维护 | services/__tests__/operationService.test.ts |
 | stores/ | ~85% | stores/__tests__/*.test.ts |
 
 ### 不覆盖的内容

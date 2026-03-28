@@ -17,9 +17,11 @@ project/
 │   │
 │   ├── lib/                  # 基础库/工具
 │   │   ├── llm/              # LLM API 调用
+│   │   ├── normalizers/      # LLM 响应标准化
 │   │   ├── storage/          # IndexedDB 存储
 │   │   └── utils.ts          # 工具函数
 │   │
+│   ├── services/             # 业务服务层
 │   ├── stores/               # Zustand 状态管理
 │   ├── components/           # UI 组件
 │   ├── constants/            # 常量定义
@@ -31,7 +33,8 @@ project/
 │   ├── SPEC.md               # 产品规格说明
 │   ├── ARCHITECTURE.md       # 架构设计文档（本文件）
 │   ├── DEVELOPMENT.md        # 开发指南
-│   └── TESTING.md            # 测试文档
+│   ├── TESTING.md            # 测试文档
+│   └── TASK.md               # 任务与排期文档
 │
 ├── dist/                     # Web 构建产物
 ├── dist-electron/            # Electron 构建产物
@@ -87,6 +90,7 @@ project/
                     │  共享代码        │
                     │  - src/types    │
                     │  - src/lib      │
+                    │  - src/services │
                     │  - src/stores   │
                     │  - src/components│
                     └────────┬────────┘
@@ -108,6 +112,7 @@ interface KnowledgeNode {
   title: string
   description: string
   type: 'concept' | 'skill' | 'tool' | 'theory'
+  operationStatus?: 'pending' | 'success' | 'failed'
   difficulty?: 1-5
   estimatedTime?: number
   expanded: boolean
@@ -134,7 +139,7 @@ interface KnowledgeEdge {
   id: string
   source: string
   target: string
-  type: 'prerequisite' | 'postrequisite' | 'related' | 'depends'
+  type: 'prerequisite' | 'postrequisite' | 'related' | 'depends' | 'contains'
   weight?: number
   label?: string
 }
@@ -157,33 +162,14 @@ interface KnowledgeGraph {
 ## 模块依赖关系
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                        UI Layer                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │  Layout  │  │   Chat   │  │   Graph  │  │ Settings │  │
-│  └─────┬────┘  └─────┬────┘  └─────┬────┘  └─────┬────┘  │
-└────────┼─────────────┼─────────────┼─────────────┼────────┘
-         │             │             │             │
-┌────────▼─────────────▼─────────────▼─────────────▼────────┐
-│                    State Layer (Zustand)                   │
-│  ┌──────────────────┐  ┌──────────────────┐  ┌─────────┐ │
-│  │ KnowledgeStore   │  │  SettingsStore   │  │ UIStore │ │
-│  └────────┬─────────┘  └────────┬─────────┘  └────┬────┘ │
-└───────────┼──────────────────┼───────────────────────┼─────┘
-            │                  │                       │
-┌───────────▼──────────────────▼───────────────────────▼─────┐
-│                      Service Layer                          │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ LLM Service  │  │ Graph Service│  │ Storage Service │  │
-│  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘  │
-└─────────┼─────────────────┼──────────────────┼────────────┘
-          │                 │                  │
-┌─────────▼─────────────────▼──────────────────▼────────────┐
-│                      External Services                       │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ OpenAI API   │  │  IndexedDB   │  │   File System   │  │
-│  └──────────────┘  └──────────────┘  └──────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+UI Layer
+  ↓
+Service Layer (`src/services/*`)
+  ↓
+Store / Repository / LLM
+  ├─ Store Layer (`knowledgeStore` / `settingsStore` / `uiStore` / `operationStore`)
+  ├─ Repository Layer (`src/lib/storage/*`)
+  └─ LLM Layer (`src/lib/llm/*` + `src/lib/normalizers/*`)
 ```
 
 ## 状态管理
@@ -213,6 +199,14 @@ interface KnowledgeGraph {
 | `importDialogOpen` | 导入对话框状态 |
 | `toasts` | Toast 通知列表 |
 
+### operationStore
+| 状态 | 说明 |
+|------|------|
+| `operations` | 操作上下文映射（按 `graphId + nodeId`） |
+| `activeOperationId` | 当前激活操作 ID |
+| `pendingCount` | 进行中的异步操作数量 |
+| `lastError` | 最近一次操作错误 |
+
 ## 数据流
 
 ### 知识图谱生成流程
@@ -221,19 +215,26 @@ interface KnowledgeGraph {
     ↓
 ChatInput.handleSubmit()
     ↓
-LLMClient.generateKnowledgeGraph()
+OperationService.generateGraph()
     ↓
-发送请求到 OpenAI Compatible API
+更新 operationStore（pending）
     ↓
-parseKnowledgeResponse() 解析 JSON
+LLMClient.generateKnowledgeGraph() → OpenAI Compatible API
     ↓
-addNodes() + addEdges() 更新状态
+normalizers 标准化 + parseKnowledgeResponse() 解析
     ↓
-createGraph() 创建新图谱
+knowledgeStore.addNodes()/addEdges() 更新状态
     ↓
-GraphRepository.save() 持久化
+GraphRepository.save() 持久化图谱
+    ↓
+operationStore 更新为 success / failed
     ↓
 React Flow 重新渲染图谱
+```
+
+### 分层调用原则
+```
+UI → Service → Store / Repository / LLM
 ```
 
 ### 节点展开流程
@@ -242,13 +243,21 @@ React Flow 重新渲染图谱
     ↓
 GraphNode.onExpand()
     ↓
-knowledgeStore.toggleExpand(nodeId)
+OperationService.expandNode(nodeId)
     ↓
-更新 expandedNodeIds Set
+更新 operationStore（pending）
+    ↓
+LLMClient.expandKnowledgeNode() → OpenAI Compatible API
+    ↓
+normalizers 标准化 + parseKnowledgeResponse() 解析
+    ↓
+knowledgeStore 更新节点与关系
+    ↓
+GraphRepository.save() 持久化
+    ↓
+operationStore 更新为 success / failed
     ↓
 React Flow 更新节点状态
-    ↓
-触发 LLM 扩展调用 (可选)
 ```
 
 ## 技术选型理由

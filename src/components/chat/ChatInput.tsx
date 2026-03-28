@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { Send, Loader2 } from 'lucide-react'
 import { Input, Button } from '@/components/ui'
-import { useKnowledgeStore, useSettingsStore } from '@/stores'
+import { useKnowledgeStore, useSettingsStore, useUIStore } from '@/stores'
 import { createGraph } from '@/services/operationService'
 
 interface ChatInputProps {
@@ -15,6 +15,7 @@ export function ChatInput({ className }: ChatInputProps) {
 
   const { llmConfig } = useSettingsStore()
   const { setError } = useKnowledgeStore()
+  const { addToast } = useUIStore()
 
   // Focus input on mount
   useEffect(() => {
@@ -55,8 +56,11 @@ export function ChatInput({ className }: ChatInputProps) {
       // 如果用户切换了图谱，显示提示
       if (!result.wasCurrentGraph) {
         console.log(`[ChatInput] 图谱 "${result.graphName}" 已在后台生成完成`)
-        // TODO: 使用 toast 组件替代
-        setError(`图谱 "${result.graphName}" 已生成完成`)
+        addToast({
+          type: 'success',
+          title: '图谱生成完成',
+          description: `图谱 "${result.graphName}" 已在后台生成完成`,
+        })
       }
     } catch (error) {
       console.error('Failed to generate knowledge graph:', error)

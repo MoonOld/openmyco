@@ -23,6 +23,10 @@ import { generateId } from '@/lib/utils'
 const POSSIBLE_ENDPOINTS = ['chat/completions', 'chat/responses'] as const
 type Endpoint = typeof POSSIBLE_ENDPOINTS[number]
 
+// 端点缓存 key（按 baseURL + model 分组）
+const getEndpointCacheKey = (baseURL: string, model: string) =>
+  `llm_endpoint:${baseURL}:${model}`
+
 /**
  * LLM Client for OpenAI Compatible API
  * 支持自动探测和 fallback 到不同的 API 端点
@@ -49,6 +53,12 @@ export class LLMClient {
     // 如果用户指定了端点，优先使用
     if (config.endpoint && POSSIBLE_ENDPOINTS.includes(config.endpoint as Endpoint)) {
       this.workingEndpoint = config.endpoint as Endpoint
+    } else {
+      // 尝试从 localStorage 恢复缓存的端点
+      const cached = localStorage.getItem(getEndpointCacheKey(config.baseURL, config.model))
+      if (cached && POSSIBLE_ENDPOINTS.includes(cached as Endpoint)) {
+        this.workingEndpoint = cached as Endpoint
+      }
     }
   }
 
@@ -77,6 +87,11 @@ export class LLMClient {
     for (const endpoint of POSSIBLE_ENDPOINTS) {
       if (await this.tryEndpoint(endpoint)) {
         this.workingEndpoint = endpoint
+        // 缓存探测结果到 localStorage
+        localStorage.setItem(
+          getEndpointCacheKey(this.config.baseURL, this.config.model),
+          endpoint
+        )
         console.log(`[LLM] 自动探测到可用端点: /${endpoint}`)
         return endpoint
       }
@@ -699,10 +714,22 @@ export class LLMClient {
    * Update the client configuration
    */
   updateConfig(config: Partial<LLMConfig>): void {
+    const oldBaseURL = this.config.baseURL
+    const oldModel = this.config.model
+
     this.config = { ...this.config, ...config }
-    // 如果更新了 endpoint，重置缓存
-    if (config.endpoint) {
+
+    // 如果 endpoint、baseURL 或 model 变更，重置缓存
+    if (config.endpoint || config.baseURL !== oldBaseURL || config.model !== oldModel) {
       this.workingEndpoint = null
+    }
+
+    // 如果 baseURL 或 model 变更，尝试从新配置的缓存中恢复
+    if ((config.baseURL || config.model) && !config.endpoint) {
+      const cached = localStorage.getItem(getEndpointCacheKey(this.config.baseURL, this.config.model))
+      if (cached && POSSIBLE_ENDPOINTS.includes(cached as Endpoint)) {
+        this.workingEndpoint = cached as Endpoint
+      }
     }
   }
 

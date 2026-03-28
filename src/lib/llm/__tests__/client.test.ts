@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LLMClient } from '../client'
 import type { LLMConfig } from '@/types'
 
@@ -7,12 +7,31 @@ const mockFetch = vi.fn()
 // @ts-expect-error - vitest handles this
 global.fetch = mockFetch
 
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {}
+  return {
+    getItem: vi.fn((key: string) => store[key] ?? null),
+    setItem: vi.fn((key: string, value: string) => {
+      store[key] = value
+    }),
+    removeItem: vi.fn((key: string) => {
+      delete store[key]
+    }),
+    clear: vi.fn(() => {
+      store = {}
+    }),
+  }
+})()
+Object.defineProperty(global, 'localStorage', { value: localStorageMock })
+
 describe('LLMClient', () => {
   let config: LLMConfig
 
   beforeEach(() => {
     // Reset mocks before each test
     vi.clearAllMocks()
+    localStorageMock.clear()
 
     config = {
       baseURL: 'https://api.openai.com/v1',
@@ -21,6 +40,10 @@ describe('LLMClient', () => {
       temperature: 0.7,
       maxTokens: 4000,
     }
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   describe('testConnection', () => {
@@ -47,6 +70,106 @@ describe('LLMClient', () => {
         expect(result.content).toBe('OK')
       }
     })
+
+  describe('Endpoint Caching', () => {
+    const cacheKey = 'llm_endpoint:https://api.openai.com/v1:gpt-4o-mini'
+
+    it('should restore cached endpoint from localStorage on construction', () => {
+      // 预设缓存
+      localStorageMock.setItem(cacheKey, 'chat/completions')
+
+      const client = new LLMClient(config)
+
+      expect(client.getWorkingEndpoint()).toBe('chat/completions')
+    })
+
+    it('should not restore invalid cached endpoint', () => {
+      // 预设无效缓存
+      localStorageMock.setItem(cacheKey, 'invalid/endpoint')
+
+      const client = new LLMClient(config)
+
+      expect(client.getWorkingEndpoint()).toBeNull()
+    })
+
+    it('should cache endpoint after successful detection', async () => {
+      // 端点探测成功
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: async () => JSON.stringify({ choices: [] }),
+      } as Response)
+
+      // 实际请求
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ choices: [{ message: { content: 'test' } }] }),
+      } as Response)
+
+      const client = new LLMClient(config)
+      await client.testConnection()
+
+      expect(localStorageMock.setItem).toHaveBeenCalledWith(cacheKey, 'chat/completions')
+    })
+
+    it('should prefer user-specified endpoint over cache', () => {
+      // 预设缓存
+      localStorageMock.setItem(cacheKey, 'chat/completions')
+
+      const configWithEndpoint = { ...config, endpoint: 'chat/responses' }
+      const client = new LLMClient(configWithEndpoint)
+
+      expect(client.getWorkingEndpoint()).toBe('chat/responses')
+    })
+
+    it('should clear endpoint cache when baseURL changes', () => {
+      // 预设缓存
+      localStorageMock.setItem(cacheKey, 'chat/completions')
+
+      const client = new LLMClient(config)
+      expect(client.getWorkingEndpoint()).toBe('chat/completions')
+
+      // 更新 baseURL
+      client.updateConfig({ baseURL: 'https://api.another.com/v1' })
+
+      // 缓存应该被清除
+      expect(client.getWorkingEndpoint()).toBeNull()
+    })
+
+    it('should clear endpoint cache when model changes', () => {
+      // 预设缓存
+      localStorageMock.setItem(cacheKey, 'chat/completions')
+
+      const client = new LLMClient(config)
+      expect(client.getWorkingEndpoint()).toBe('chat/completions')
+
+      // 更新 model
+      client.updateConfig({ model: 'gpt-4o' })
+
+      // 缓存应该被清除
+      expect(client.getWorkingEndpoint()).toBeNull()
+    })
+
+    it('should restore cached endpoint for new config after update', () => {
+      // 预设两个配置的缓存
+      localStorageMock.setItem(cacheKey, 'chat/completions')
+      localStorageMock.setItem(
+        'llm_endpoint:https://api.another.com/v1:gpt-4o',
+        'chat/responses'
+      )
+
+      const client = new LLMClient(config)
+      expect(client.getWorkingEndpoint()).toBe('chat/completions')
+
+      // 更新到新配置（有缓存）
+      client.updateConfig({
+        baseURL: 'https://api.another.com/v1',
+        model: 'gpt-4o'
+      })
+
+      // 应该恢复新配置的缓存
+      expect(client.getWorkingEndpoint()).toBe('chat/responses')
+    })
+  })
 
     it('should return detailed error when API returns 401 Unauthorized', async () => {
       // 模拟两个端点都返回 401

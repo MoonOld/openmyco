@@ -24,7 +24,7 @@ export function Header() {
             )}
           </Button>
           <Brain className="h-6 w-6 text-primary" />
-          <span className="font-bold text-lg">OpenLearning</span>
+          <span className="font-bold text-lg">OpenMyco</span>
         </div>
 
         {/* Actions */}

@@ -1,4 +1,4 @@
-# OpenLearning - 架构设计文档
+# OpenMyco - 架构设计文档
 
 ## 目录结构
 

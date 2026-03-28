@@ -1,4 +1,4 @@
-# OpenLearning - 开发指南
+# OpenMyco - 开发指南
 
 ## 开发环境设置
 
@@ -230,9 +230,9 @@ npm run build
 npm run preview
 
 # Electron（运行未打包版本）
-./release/linux-unpacked/openlearning  # Linux
-./OpenLearning.app                    # macOS
-OpenLearning.exe                      # Windows
+./release/linux-unpacked/openmyco  # Linux
+./OpenMyco.app                    # macOS
+OpenMyco.exe                      # Windows
 ```
 
 ### 4. 提交代码

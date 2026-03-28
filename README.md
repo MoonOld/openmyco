@@ -1,73 +1,109 @@
-# React + TypeScript + Vite
+# OpenMyco
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+<p align="center">
+  <img src="build/icon.svg" width="128" height="128" alt="OpenMyco Logo">
+</p>
 
-Currently, two official plugins are available:
+<p align="center">
+  <strong>让知识像菌丝一样生长</strong>
+</p>
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+<p align="center">
+  <em>Let knowledge grow like mycelium.</em>
+</p>
 
-## React Compiler
+---
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 什么是 OpenMyco？
 
-## Expanding the ESLint configuration
+**OpenMyco** 是一个 AI 驱动的知识图谱学习工具。输入任意知识点，AI 将自动构建相关知识网络，以可视化图谱展示，支持递归扩展探索。
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```
+输入: "React Hooks"
+     ↓
+AI 生成知识网络
+     ↓
+     useState ── useEffect
+        │           │
+    useReducer   useCallback
+        │           │
+     useContext ── useMemo
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 核心特性
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+- 🧠 **AI 驱动** - 通过 LLM 问答自动构建知识体系
+- 🕸️ **知识图谱** - 可视化展示知识点之间的关系
+- 🔄 **递归扩展** - 点击节点可继续深入探索
+- 💾 **本地存储** - 数据存储在本地 IndexedDB，保护隐私
+- 🌐 **离线可用** - 生成后可离线查看和学习
+- 🖥️ **跨平台** - 支持 Web 和 Electron 桌面应用
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## 快速开始
+
+### Web 模式（推荐）
+
+```bash
+# 安装依赖
+npm install
+
+# 启动开发服务器
+npm run dev:web
+# 访问 http://localhost:5173
 ```
+
+### Electron 桌面模式
+
+```bash
+npm run dev:electron
+```
+
+## 构建
+
+```bash
+# Web 版本
+npm run build:web
+
+# Electron 应用
+npm run build        # 当前平台
+npm run build:win    # Windows
+npm run build:mac    # macOS
+npm run build:linux  # Linux
+```
+
+## 技术栈
+
+| 技术 | 用途 |
+|------|------|
+| React 19 + TypeScript | 前端框架 |
+| Zustand | 状态管理 |
+| React Flow | 图可视化 |
+| Dexie.js | IndexedDB 存储 |
+| Tailwind CSS + shadcn/ui | UI 组件 |
+| Electron | 桌面应用 |
+
+## 品牌故事
+
+**Myco** 来自 *Mycelium*（菌丝网络）。
+
+菌丝是自然界最神奇的网络结构——在地表之下，无数微小的菌丝相互连接，形成庞大的信息与营养交换网络。这正是知识学习的完美隐喻：
+
+- **分布式** - 知识点之间本就相互关联
+- **有机生长** - 从一个点，长出整片网络
+- **强健性** - 连接越多，网络越稳固
+
+> "知识就像菌丝，看不见却无处不在，一念起，万物相连。"
+
+## 开发文档
+
+详细文档请参考 `docs/` 目录：
+
+- [产品规格](docs/SPEC.md)
+- [架构设计](docs/ARCHITECTURE.md)
+- [开发指南](docs/DEVELOPMENT.md)
+- [测试文档](docs/TESTING.md)
+- [构建指南](BUILD.md)
+
+## License
+
+MIT

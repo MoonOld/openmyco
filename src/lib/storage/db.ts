@@ -2,9 +2,9 @@ import Dexie, { type Table } from 'dexie'
 import type { StoredKnowledgeGraph, GraphSnapshot } from '@/types'
 
 /**
- * OpenLearning IndexedDB Database
+ * OpenMyco IndexedDB Database
  */
-export class OpenLearningDB extends Dexie {
+export class OpenMycoDB extends Dexie {
   graphs!: Table<StoredKnowledgeGraph, string>
   snapshots!: Table<GraphSnapshot, string>
 
@@ -20,7 +20,7 @@ export class OpenLearningDB extends Dexie {
 }
 
 // Create a single instance
-export const db = new OpenLearningDB()
+export const db = new OpenMycoDB()
 
 /**
  * Initialize the database

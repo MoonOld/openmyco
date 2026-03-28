@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**OpenLearning** - 交互式知识图谱学习工具
+**OpenMyco** - 交互式知识图谱学习工具
 
 通过 LLM 问答进行知识学习的结构化平台。用户输入知识点，LLM 分析返回相关知识体系，以可视化知识图谱展示，支持递归扩展。
 

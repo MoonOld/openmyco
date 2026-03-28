@@ -1,4 +1,4 @@
-# OpenLearning 打包构建指南
+# OpenMyco 打包构建指南
 
 ## 支持平台
 
@@ -61,9 +61,9 @@ npm run build:web
 
 构建产物位于 `release/` 目录：
 
-- **Windows**: `release/OpenLearning Setup 0.1.0.exe`
-- **macOS**: `release/OpenLearning-0.1.0.dmg`
-- **Linux**: `release/OpenLearning-0.1.0.AppImage`
+- **Windows**: `release/OpenMyco Setup 0.1.0.exe`
+- **macOS**: `release/OpenMyco-0.1.0.dmg`
+- **Linux**: `release/OpenMyco-0.1.0.AppImage`
 
 ## 交叉编译说明
 
@@ -171,8 +171,8 @@ winecfg
 ### Linux AppImage 不运行
 ```bash
 # 赋予执行权限
-chmod +x release/OpenLearning-*.AppImage
+chmod +x release/OpenMyco-*.AppImage
 
 # 如果仍有问题，提取内容检查
-./OpenLearning-*.AppImage --appimage-extract
+./OpenMyco-*.AppImage --appimage-extract
 ```

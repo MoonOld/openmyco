@@ -1,7 +1,7 @@
 .PHONY: help dev dev-web dev-electron build build-web build-electron build-win build-mac build-linux lint test test-run clean
 
 help:
-	@echo "OpenLearning 构建命令"
+	@echo "OpenMyco 构建命令"
 	@echo ""
 	@echo "开发:"
 	@echo "  make dev          启动 Electron 开发模式"

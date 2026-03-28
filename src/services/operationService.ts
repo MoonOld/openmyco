@@ -332,8 +332,11 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     }
 
     // ========== Step 3: 更新节点内容 ==========
-    // 更新主节点
-    const rootNodeUpdates: Partial<KnowledgeNode> = {}
+    // 更新主节点 - 始终更新 operationStatus
+    const rootNodeUpdates: Partial<KnowledgeNode> = {
+      operationStatus: 'success' as const,
+      operationError: undefined,  // 清理历史错误
+    }
     if (deepInfo?.description) {
       Object.assign(rootNodeUpdates, {
         description: deepInfo.description,
@@ -343,7 +346,6 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
         ...(deepInfo.examples && { examples: deepInfo.examples }),
         ...(deepInfo.bestPractices && { bestPractices: deepInfo.bestPractices }),
         ...(deepInfo.commonMistakes && { commonMistakes: deepInfo.commonMistakes }),
-        operationStatus: 'success' as const,
       })
     }
 
@@ -403,6 +405,21 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       operationId,
       error instanceof Error ? error.message : '未知错误'
     )
+
+    // 并发安全校验：仅 pending 时才更新为 failed
+    const currentOp = useOperationStore.getState().getOperation(operationId)
+    if (currentOp?.status === 'pending' || !currentOp) {
+      await useKnowledgeStore.getState().updateGraphById(graphId, {
+        rootNodeId: nodeId,
+        rootNodeUpdates: {
+          operationStatus: 'failed',
+          operationError: error instanceof Error ? error.message : '展开节点时出错',
+        },
+        mutationType: 'meta',
+        sourceOperationId: operationId,
+      })
+    }
+
     return {
       success: false,
       operationId,

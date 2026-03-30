@@ -78,6 +78,9 @@ export const KNOWLEDGE_DEEP_PROMPT = (
     { "term": "关键术语1", "definition": "简短定义" },
     { "term": "关键术语2", "definition": "简短定义" }
   ],
+  "subTopics": [
+    { "title": "子话题标题", "description": "简短描述", "keyPoints": ["要点1", "要点2"] }
+  ],
   "estimatedTime": 30
 }
 
@@ -89,6 +92,7 @@ export const KNOWLEDGE_DEEP_PROMPT = (
 - bestPractices: 至少2条可操作的实践建议
 - commonMistakes: 至少2个学习者常犯的错误或误区
 - keyTerms: 3-5个关键术语，每个包含术语名称和简短定义（一句话）；如不适用可返回空数组
+- subTopics: 3-5个子话题，每个包含标题、简短描述和可选要点列表。子话题是当前知识点的细分方向（如"React Hooks"的子话题可以是"State Hooks"、"Effect Hooks"），而非独立的前置/后置知识。如不适用可返回空数组
 - estimatedTime: 预计学习分钟数（整数）
 
 **质量要求**：

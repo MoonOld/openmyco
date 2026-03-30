@@ -157,6 +157,33 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
                   </div>
                 )}
 
+                {/* Sub Topics */}
+                {selectedNode.subTopics && selectedNode.subTopics.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">子话题</h4>
+                    <div className="space-y-2">
+                      {selectedNode.subTopics.map((st, index) => (
+                        <div key={index} className="rounded-lg border bg-muted/30 p-3">
+                          <h5 className="text-sm font-medium">{st.title}</h5>
+                          <p className="text-sm text-muted-foreground mt-0.5">{st.description}</p>
+                          {st.keyPoints && st.keyPoints.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              {st.keyPoints.map((kp, kpIndex) => (
+                                <span
+                                  key={kpIndex}
+                                  className="px-2 py-0.5 text-xs rounded-full bg-secondary text-secondary-foreground"
+                                >
+                                  {kp}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Incoming relations */}
                 {incomingEdges.length > 0 && (
                   <div>

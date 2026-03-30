@@ -394,3 +394,143 @@ describe('parseDeepResponse - keyTerms', () => {
     })
   })
 })
+
+describe('parseDeepResponse - subTopics', () => {
+  it('should parse subTopics with valid entries', () => {
+    const content = JSON.stringify({
+      title: 'React Hooks',
+      description: 'React Hooks let you use state in functional components.',
+      principle: 'Hooks are functions that hook into React state.',
+      subTopics: [
+        { title: 'State Hooks', description: 'Manage component state', keyPoints: ['useState', 'useReducer'] },
+        { title: 'Effect Hooks', description: 'Handle side effects', keyPoints: ['useEffect', 'useLayoutEffect'] },
+        { title: 'Context Hooks', description: 'Share data across tree' },
+      ],
+      estimatedTime: 30,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.subTopics).toHaveLength(3)
+    expect(result?.subTopics?.[0]).toEqual({
+      title: 'State Hooks',
+      description: 'Manage component state',
+      keyPoints: ['useState', 'useReducer'],
+    })
+    expect(result?.subTopics?.[2]).toEqual({
+      title: 'Context Hooks',
+      description: 'Share data across tree',
+    })
+  })
+
+  it('should filter out subTopics entries with empty title or description', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      subTopics: [
+        { title: 'valid', description: 'valid desc' },
+        { title: '', description: 'empty title' },
+        { title: 'empty desc', description: '' },
+        { title: '  ', description: 'whitespace title' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.subTopics).toHaveLength(1)
+    expect(result?.subTopics?.[0]?.title).toBe('valid')
+  })
+
+  it('should return undefined subTopics when not present in response', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      principle: 'Some principle',
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.subTopics).toBeUndefined()
+  })
+
+  it('should return undefined subTopics when subTopics is empty array after filtering', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      subTopics: [
+        { title: '', description: '' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.subTopics).toBeUndefined()
+  })
+
+  it('should handle subTopics being a non-array value gracefully', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      subTopics: 'not an array',
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.subTopics).toBeUndefined()
+  })
+
+  it('should handle subTopics with non-object entries', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      subTopics: ['string entry', 123, null, { title: 'valid', description: 'valid desc' }],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.subTopics).toHaveLength(1)
+    expect(result?.subTopics?.[0]?.title).toBe('valid')
+  })
+
+  it('should filter keyPoints to only non-empty strings', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      subTopics: [
+        { title: 'Valid', description: 'desc', keyPoints: ['point 1', '', '  ', 'point 2'] },
+        { title: 'No points', description: 'desc', keyPoints: ['', '  '] },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.subTopics?.[0]?.keyPoints).toEqual(['point 1', 'point 2'])
+    // keyPoints all filtered out → undefined
+    expect(result?.subTopics?.[1]?.keyPoints).toBeUndefined()
+  })
+
+  it('should trim whitespace from title, description, and keyPoints', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      subTopics: [
+        { title: '  Hooks  ', description: '  Manage state  ', keyPoints: ['  point 1  '] },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.subTopics?.[0]).toEqual({
+      title: 'Hooks',
+      description: 'Manage state',
+      keyPoints: ['point 1'],
+    })
+  })
+})

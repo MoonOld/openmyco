@@ -235,6 +235,47 @@ describe('NodeDetailPanel', () => {
       render(<NodeDetailPanel />)
       expect(screen.queryByText('关键术语')).not.toBeInTheDocument()
     })
+
+    it('should display subTopics in overview tab', () => {
+      const node = createMockNode({
+        subTopics: [
+          { title: 'State Hooks', description: 'Manage component state', keyPoints: ['useState', 'useReducer'] },
+          { title: 'Effect Hooks', description: 'Handle side effects' },
+        ],
+      })
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.getByText('子话题')).toBeInTheDocument()
+      expect(screen.getByText('State Hooks')).toBeInTheDocument()
+      expect(screen.getByText(/Manage component state/)).toBeInTheDocument()
+      expect(screen.getByText('Effect Hooks')).toBeInTheDocument()
+      expect(screen.getByText('Handle side effects')).toBeInTheDocument()
+    })
+
+    it('should display subTopic keyPoints', () => {
+      const node = createMockNode({
+        subTopics: [
+          { title: 'State Hooks', description: 'Manage state', keyPoints: ['useState', 'useReducer'] },
+        ],
+      })
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.getByText('useState')).toBeInTheDocument()
+      expect(screen.getByText('useReducer')).toBeInTheDocument()
+    })
+
+    it('should not show subTopics section when subTopics is empty', () => {
+      const node = createMockNode()
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.queryByText('子话题')).not.toBeInTheDocument()
+    })
   })
 
   describe('relation navigation', () => {

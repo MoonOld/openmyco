@@ -202,6 +202,7 @@ export const useKnowledgeStore = create<KnowledgeState>()(
               ...(deepInfo.bestPractices && { bestPractices: deepInfo.bestPractices }),
               ...(deepInfo.commonMistakes && { commonMistakes: deepInfo.commonMistakes }),
               ...(deepInfo.keyTerms && { keyTerms: deepInfo.keyTerms }),
+              ...(deepInfo.subTopics && { subTopics: deepInfo.subTopics }),
             })
           }
 

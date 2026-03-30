@@ -5,6 +5,7 @@ import {
   extractErrorMessage,
   buildTitleToIdMap,
   convertRelationsToIds,
+  extractJSON,
 } from '../parsers'
 import type { RelationType, LLMKnowledgeResponse } from '@/types'
 
@@ -225,5 +226,51 @@ describe('convertRelationsToIds', () => {
     const result = convertRelationsToIds(relations, titleToId)
 
     expect(result).toHaveLength(0)
+  })
+})
+
+describe('extractJSON', () => {
+  it('should return raw content if it is already valid JSON', () => {
+    const json = '{"name":"test","value":42}'
+    expect(extractJSON(json)).toBe(json)
+  })
+
+  it('should extract JSON when followed by extra text', () => {
+    const content = '{"name":"test"} Here is some extra text that the LLM added.'
+    expect(extractJSON(content)).toBe('{"name":"test"}')
+  })
+
+  it('should strip markdown code fence and extract JSON', () => {
+    const content = '```json\n{"name":"test"}\n```'
+    expect(extractJSON(content)).toBe('{"name":"test"}')
+  })
+
+  it('should strip code fence without language hint', () => {
+    const content = '```\n{"name":"test"}\n```'
+    expect(extractJSON(content)).toBe('{"name":"test"}')
+  })
+
+  it('should not break on brackets inside JSON strings', () => {
+    const content = '{"text": "a {b} c"}'
+    expect(extractJSON(content)).toBe('{"text": "a {b} c"}')
+  })
+
+  it('should return null when no JSON is present', () => {
+    expect(extractJSON('plain text without json')).toBeNull()
+  })
+
+  it('should extract top-level array JSON', () => {
+    const content = '[1, 2, 3] trailing'
+    expect(extractJSON(content)).toBe('[1, 2, 3]')
+  })
+
+  it('should find first valid JSON among multiple candidates', () => {
+    const content = 'Some text {invalid { bracket} {"valid": true} extra'
+    expect(extractJSON(content)).toBe('{"valid": true}')
+  })
+
+  it('should handle escaped quotes inside JSON strings', () => {
+    const content = '{"msg": "He said \\"hello\\""} and more'
+    expect(JSON.parse(extractJSON(content)!)).toEqual({ msg: 'He said "hello"' })
   })
 })

@@ -346,7 +346,9 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     if (!autoLayout) return
 
     const handleGraphUpdate = (event: GraphUpdateEvent) => {
-      const detail: GraphUpdateEventDetail = event.detail
+      const detail: GraphUpdateEventDetail | undefined = event.detail
+      // 跳过无 detail 的事件（来自 GraphRepository.save 的列表刷新通知）
+      if (!detail) return
 
       // 只响应当前图谱的结构变更
       if (detail.graphId !== currentGraph?.id) return

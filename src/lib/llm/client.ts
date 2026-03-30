@@ -5,7 +5,7 @@ import type {
   LLMKnowledgeResponse,
   LLMKnowledgeResponseV2,
 } from '@/types'
-import { parseKnowledgeResponse, parseKnowledgeResponseV2, parseSkeletonResponse, parseDeepResponse } from './parsers'
+import { parseKnowledgeResponse, parseKnowledgeResponseV2, parseSkeletonResponse, parseDeepResponse, extractJSON } from './parsers'
 import {
   KNOWLEDGE_GRAPH_PROMPT,
   KNOWLEDGE_SKELETON_PROMPT as KNOWLEDGE_SKELETON_PROMPT_FN,
@@ -270,10 +270,10 @@ export class LLMClient {
     if (!response) return null
 
     try {
-      const jsonMatch = response.match(/\{[\s\S]*\}/)
-      if (!jsonMatch) return null
+      const jsonStr = extractJSON(response)
+      if (!jsonStr) return null
 
-      const data = JSON.parse(jsonMatch[0])
+      const data = JSON.parse(jsonStr)
       return data.nodes || null
     } catch {
       return null

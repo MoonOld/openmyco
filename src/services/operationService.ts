@@ -19,6 +19,7 @@ import { generateId } from '@/lib/utils'
 import type { KnowledgeNode, KnowledgeEdge } from '@/types'
 import { normalizeLLMResponse } from '@/lib/normalizers/llmGraphNormalizer'
 import { dispatchGraphUpdateEvent } from '@/types/events'
+import type { UpdateGraphResult } from '@/stores/knowledgeStore'
 
 // 操作结果
 export interface OperationResult {
@@ -28,6 +29,37 @@ export interface OperationResult {
   graphName?: string
   error?: string
   wasCurrentGraph: boolean  // 操作完成时是否是当前图谱
+}
+
+/**
+ * 辅助函数：纯状态转换（不包含额外内容字段）
+ * 统一 pending/success/failed 状态切换逻辑
+ */
+async function transitionNodeStatus(
+  nodeId: string,
+  graphId: string,
+  status: 'pending' | 'success' | 'failed',
+  options?: {
+    error?: string
+    activeOperationId?: string
+    mutationType?: 'structure' | 'content' | 'meta'
+    expectedOperationId?: string
+    nodeUpdates?: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }>
+    sourceOperationId?: string
+  }
+): Promise<UpdateGraphResult> {
+  return useKnowledgeStore.getState().updateGraphById(graphId, {
+    rootNodeId: nodeId,
+    rootNodeUpdates: {
+      operationStatus: status,
+      operationError: options?.error,
+      activeOperationId: options?.activeOperationId,
+    },
+    nodeUpdates: options?.nodeUpdates,
+    mutationType: options?.mutationType ?? 'meta',
+    sourceOperationId: options?.sourceOperationId,
+    expectedOperationId: options?.expectedOperationId,
+  })
 }
 
 /**
@@ -99,14 +131,8 @@ export async function createGraph(topic: string): Promise<OperationResult> {
     if (!response) {
       useOperationStore.getState().failOperation(operationId, 'LLM 未返回数据')
       // 更新主节点状态为失败，清除 activeOperationId（带 CAS）
-      await useKnowledgeStore.getState().updateGraphById(graphId, {
-        rootNodeId: tempNodeId,
-        rootNodeUpdates: {
-          operationStatus: 'failed',
-          operationError: '未能获取知识图谱，请重试',
-          activeOperationId: undefined,
-        },
-        mutationType: 'meta',
+      await transitionNodeStatus(tempNodeId, graphId, 'failed', {
+        error: '未能获取知识图谱，请重试',
         expectedOperationId: operationId,
       })
       return {
@@ -177,14 +203,8 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       error instanceof Error ? error.message : '未知错误'
     )
     // 更新主节点状态为失败，清除 activeOperationId（带 CAS）
-    await useKnowledgeStore.getState().updateGraphById(graphId, {
-      rootNodeId: tempNodeId,
-      rootNodeUpdates: {
-        operationStatus: 'failed',
-        operationError: error instanceof Error ? error.message : '生成知识图谱时出错',
-        activeOperationId: undefined,
-      },
-      mutationType: 'meta',
+    await transitionNodeStatus(tempNodeId, graphId, 'failed', {
+      error: error instanceof Error ? error.message : '生成知识图谱时出错',
       expectedOperationId: operationId,
     }).catch(() => {
       // CAS 失败时忽略（操作已被新操作取代）
@@ -249,13 +269,7 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
 
   // 如果是重试失败节点，重置状态
   if (isFailed) {
-    await store.updateGraphById(graph.id, {
-      rootNodeId: nodeId,
-      rootNodeUpdates: {
-        operationStatus: 'pending',
-        operationError: undefined,
-      },
-    })
+    await transitionNodeStatus(nodeId, graph.id, 'pending')
   }
 
   const graphId = graph.id
@@ -271,13 +285,8 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
   })
 
   // 写入 activeOperationId 到节点（获取 CAS 锁）
-  await useKnowledgeStore.getState().updateGraphById(graphId, {
-    rootNodeId: nodeId,
-    rootNodeUpdates: {
-      activeOperationId: operationId,
-      operationStatus: 'pending',
-      operationError: undefined,
-    },
+  await transitionNodeStatus(nodeId, graphId, 'pending', {
+    activeOperationId: operationId,
     mutationType: 'meta',
   })
 
@@ -339,13 +348,34 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       expectedOperationId: operationId,
     })
 
-    // ========== Step 2: 并行获取深度信息 ==========
+    // ========== Step 2: 并行获取深度信息（支持部分成功）==========
     const relatedTitles = skeleton.relatedTitles.map((r) => r.title)
 
-    const [deepInfo, relatedInfo] = await Promise.all([
+    const [deepInfoResult, relatedInfoResult] = await Promise.allSettled([
       client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription),
       client.getRelatedKnowledge(skeleton.node.title, relatedTitles),
     ])
+
+    const deepInfo = deepInfoResult.status === 'fulfilled' ? deepInfoResult.value : null
+    const relatedInfo = relatedInfoResult.status === 'fulfilled' ? relatedInfoResult.value : null
+    const deepInfoError = deepInfoResult.status === 'rejected' ? deepInfoResult.reason : null
+    const relatedInfoError = relatedInfoResult.status === 'rejected' ? relatedInfoResult.reason : null
+
+    // 两个都失败 → throw（进入 catch 块，全部标记 failed）
+    if (!deepInfo && !relatedInfo) {
+      const errorMsg = deepInfoError instanceof Error ? deepInfoError.message
+        : relatedInfoError instanceof Error ? relatedInfoError.message
+        : '获取知识信息失败'
+      throw new Error(errorMsg)
+    }
+
+    // 部分成功时记录 warn 日志
+    if (deepInfoError) {
+      console.warn('[OperationService] getKnowledgeDeep 失败，仅使用 relatedInfo:', deepInfoError)
+    }
+    if (relatedInfoError) {
+      console.warn('[OperationService] getRelatedKnowledge 失败，仅使用 deepInfo:', relatedInfoError)
+    }
 
     // 并发安全校验：检查操作是否仍然有效
     const currentOp = useOperationStore.getState().getOperation(operationId)
@@ -360,8 +390,8 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       }
     }
 
-    // ========== Step 3: 批量更新节点内容 ==========
-    // 合并主节点 + 关联节点为一次写入，减少 IndexedDB 往返和竞态窗口
+    // ========== Step 3: 批量更新节点内容（部分成功模式）==========
+    // 主节点更新
     const rootNodeUpdates: Partial<KnowledgeNode> = {
       operationStatus: 'success' as const,
       operationError: undefined,
@@ -395,6 +425,21 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
             },
           })
         }
+      })
+    }
+
+    // deepInfo 失败但 relatedInfo 成功 → 骨架节点有内容
+    // relatedInfo 失败但 deepInfo 成功 → 骨架节点标记 failed
+    if (!relatedInfo && skeletonNodeMap) {
+      const relatedErrorMsg = relatedInfoError instanceof Error ? relatedInfoError.message : '关联知识获取失败'
+      skeletonNodeMap.forEach((skeletonNodeId) => {
+        batchNodeUpdates.push({
+          nodeId: skeletonNodeId,
+          updates: {
+            operationStatus: 'failed',
+            operationError: relatedErrorMsg,
+          },
+        })
       })
     }
 
@@ -448,15 +493,9 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       })
     }
 
-    await useKnowledgeStore.getState().updateGraphById(graphId, {
-      rootNodeId: nodeId,
-      rootNodeUpdates: {
-        operationStatus: 'failed',
-        operationError: errorMessage,
-        activeOperationId: undefined,
-      },
+    await transitionNodeStatus(nodeId, graphId, 'failed', {
+      error: errorMessage,
       nodeUpdates: batchFailUpdates,
-      mutationType: 'meta',
       sourceOperationId: operationId,
       expectedOperationId: operationId,
     }).catch(() => {
@@ -499,14 +538,8 @@ export async function resumePendingOperations(): Promise<void> {
     totalPending += pendingNodes.length
 
     for (const node of pendingNodes) {
-      await useKnowledgeStore.getState().updateGraphById(graph.id, {
-        rootNodeId: node.id,
-        rootNodeUpdates: {
-          operationStatus: 'failed',
-          operationError: '操作中断，请点击重试',
-          activeOperationId: undefined,
-        },
-        mutationType: 'meta',
+      await transitionNodeStatus(node.id, graph.id, 'failed', {
+        error: '操作中断，请点击重试',
       })
     }
   }

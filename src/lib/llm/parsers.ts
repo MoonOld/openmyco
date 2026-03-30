@@ -2,6 +2,69 @@ import type { LLMKnowledgeResponse, LLMKnowledgeResponseV2, KnowledgeNode, Relat
 import { generateId } from '@/lib/utils'
 
 /**
+ * Extract valid JSON from LLM response content.
+ *
+ * Strategy: direct parse → markdown code fence → bracket-balanced scan (with validation)
+ * Supports both `{}` and `[]` top-level structures.
+ */
+export function extractJSON(content: string): string | null {
+  // Step 1: direct parse
+  try {
+    JSON.parse(content)
+    return content
+  } catch { /* continue */ }
+
+  // Step 2: strip markdown code fence, then try parse
+  const fenceMatch = content.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/)
+  if (fenceMatch) {
+    const fenceContent = fenceMatch[1].trim()
+    try {
+      JSON.parse(fenceContent)
+      return fenceContent
+    } catch { /* continue */ }
+  }
+
+  // Step 3: bracket-balanced scan with validation
+  const text = (fenceMatch ? fenceMatch[1] : content).trim()
+  const starts = ['{', '['] as const
+  const ends = ['}', ']'] as const
+
+  for (let s = 0; s < text.length; s++) {
+    const startIdx = starts.indexOf(text[s] as (typeof starts)[number])
+    if (startIdx === -1) continue
+
+    const openCh = starts[startIdx]
+    const closeCh = ends[startIdx]
+    let depth = 0
+    let inString = false
+    let escape = false
+
+    for (let i = s; i < text.length; i++) {
+      const ch = text[i]
+      if (escape) { escape = false; continue }
+      if (ch === '\\') { escape = true; continue }
+      if (ch === '"') { inString = !inString; continue }
+      if (inString) continue
+      if (ch === openCh) depth++
+      else if (ch === closeCh) {
+        depth--
+        if (depth === 0) {
+          const candidate = text.substring(s, i + 1)
+          try {
+            JSON.parse(candidate)
+            return candidate
+          } catch {
+            break // candidate failed validation, try next start position
+          }
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+/**
  * Raw LLM response data structure (V2 - 使用 ref)
  */
 interface RawLLMNodeDataV2 {
@@ -57,13 +120,13 @@ export function parseKnowledgeResponseV2(
   content: string
 ): LLMKnowledgeResponseV2 | null {
   try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
+    const jsonStr = extractJSON(content)
+    if (!jsonStr) {
       console.error('[parseV2] No JSON found in response')
       return null
     }
 
-    const data = JSON.parse(jsonMatch[0])
+    const data = JSON.parse(jsonStr)
     console.log('[parseV2] Parsed data:', data)
 
     if (isV2Format(data)) {
@@ -222,13 +285,13 @@ export function parseKnowledgeResponse(
   rootNodeId?: string
 ): LLMKnowledgeResponse | null {
   try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) {
+    const jsonStr = extractJSON(content)
+    if (!jsonStr) {
       console.error('No JSON found in response')
       return null
     }
 
-    const data = JSON.parse(jsonMatch[0])
+    const data = JSON.parse(jsonStr)
     console.log('[parseKnowledgeResponse] Parsed data:', data)
 
     // Parse main node
@@ -389,10 +452,10 @@ export function parseSkeletonResponse(content: string): {
   relatedTitles: { title: string; type: string; relation: string }[]
 } | null {
   try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return null
+    const jsonStr = extractJSON(content)
+    if (!jsonStr) return null
 
-    const data = JSON.parse(jsonMatch[0])
+    const data = JSON.parse(jsonStr)
 
     return {
       node: {
@@ -439,10 +502,10 @@ export function parseDeepResponse(content: string): {
   estimatedTime?: number
 } | null {
   try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return null
+    const jsonStr = extractJSON(content)
+    if (!jsonStr) return null
 
-    const data = JSON.parse(jsonMatch[0])
+    const data = JSON.parse(jsonStr)
 
     return {
       title: data.title,

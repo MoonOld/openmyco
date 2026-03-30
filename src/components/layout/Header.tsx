@@ -23,7 +23,7 @@ export function Header() {
               <PanelLeftClose className="h-4 w-4" />
             )}
           </Button>
-          <img src="/logo.svg" alt="OpenMyco" className="h-6 w-6" />
+          <img src={`${import.meta.env.BASE_URL}logo.svg`} alt="OpenMyco" className="h-6 w-6" />
           <span className="font-bold text-lg">OpenMyco</span>
         </div>
 

@@ -406,6 +406,7 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
         ...(deepInfo.examples && { examples: deepInfo.examples }),
         ...(deepInfo.bestPractices && { bestPractices: deepInfo.bestPractices }),
         ...(deepInfo.commonMistakes && { commonMistakes: deepInfo.commonMistakes }),
+        ...(deepInfo.keyTerms && { keyTerms: deepInfo.keyTerms }),
       })
     }
 

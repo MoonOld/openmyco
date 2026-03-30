@@ -233,6 +233,7 @@ export class LLMClient {
     examples?: Array<{ title: string; code?: string; explanation: string }>
     bestPractices?: string[]
     commonMistakes?: string[]
+    keyTerms?: Array<{ term: string; definition: string }>
     estimatedTime?: number
   } | null> {
     const messages: ChatMessage[] = [
@@ -325,6 +326,7 @@ export class LLMClient {
         examples: deepInfo?.examples,
         bestPractices: deepInfo?.bestPractices,
         commonMistakes: deepInfo?.commonMistakes,
+        keyTerms: deepInfo?.keyTerms,
       },
       prerequisites: [],
       postrequisites: [],

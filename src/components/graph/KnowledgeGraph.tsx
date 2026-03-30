@@ -129,16 +129,15 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
   const { addToast } = useUIStore()
   const { fitView } = useReactFlow()
 
-  // 切换图谱时自动 fitView
+  // 仅在切换图谱时自动 fitView（不因选中节点等操作触发）
   useEffect(() => {
     if (currentGraph) {
-      // 延迟执行确保节点已渲染
       const timer = setTimeout(() => {
         fitView({ duration: 300, padding: 0.2 })
       }, 50)
       return () => clearTimeout(timer)
     }
-  }, [currentGraph, fitView])
+  }, [currentGraph?.id, fitView])
 
   // 处理节点展开（包装 expandNode 以显示 toast）
   const handleExpandNode = useCallback(async (nodeId: string) => {

@@ -6,6 +6,7 @@ import {
   buildTitleToIdMap,
   convertRelationsToIds,
   extractJSON,
+  parseDeepResponse,
 } from '../parsers'
 import type { RelationType, LLMKnowledgeResponse } from '@/types'
 
@@ -272,5 +273,124 @@ describe('extractJSON', () => {
   it('should handle escaped quotes inside JSON strings', () => {
     const content = '{"msg": "He said \\"hello\\""} and more'
     expect(JSON.parse(extractJSON(content)!)).toEqual({ msg: 'He said "hello"' })
+  })
+})
+
+describe('parseDeepResponse - keyTerms', () => {
+  it('should parse keyTerms with valid entries', () => {
+    const content = JSON.stringify({
+      title: 'React Hooks',
+      description: 'React Hooks let you use state in functional components.',
+      principle: 'Hooks are functions that hook into React state.',
+      keyTerms: [
+        { term: 'useState', definition: 'A hook that adds state to functional components' },
+        { term: 'useEffect', definition: 'A hook for side effects in functional components' },
+      ],
+      estimatedTime: 30,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.keyTerms).toHaveLength(2)
+    expect(result?.keyTerms?.[0]).toEqual({
+      term: 'useState',
+      definition: 'A hook that adds state to functional components',
+    })
+    expect(result?.keyTerms?.[1]).toEqual({
+      term: 'useEffect',
+      definition: 'A hook for side effects in functional components',
+    })
+  })
+
+  it('should filter out keyTerms entries with empty term or definition', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      keyTerms: [
+        { term: 'valid', definition: 'valid def' },
+        { term: '', definition: 'empty term' },
+        { term: 'empty def', definition: '' },
+        { term: '  ', definition: 'whitespace term' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.keyTerms).toHaveLength(1)
+    expect(result?.keyTerms?.[0]?.term).toBe('valid')
+  })
+
+  it('should return undefined keyTerms when not present in response', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      principle: 'Some principle',
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.keyTerms).toBeUndefined()
+  })
+
+  it('should return undefined keyTerms when keyTerms is empty array after filtering', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      keyTerms: [
+        { term: '', definition: '' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.keyTerms).toBeUndefined()
+  })
+
+  it('should handle keyTerms being a non-array value gracefully', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      keyTerms: 'not an array',
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.keyTerms).toBeUndefined()
+  })
+
+  it('should handle keyTerms with non-object entries', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      keyTerms: ['string entry', 123, null, { term: 'valid', definition: 'valid def' }],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.keyTerms).toHaveLength(1)
+    expect(result?.keyTerms?.[0]?.term).toBe('valid')
+  })
+
+  it('should trim whitespace from term and definition', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      keyTerms: [
+        { term: '  useState  ', definition: '  adds state  ' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.keyTerms?.[0]).toEqual({
+      term: 'useState',
+      definition: 'adds state',
+    })
   })
 })

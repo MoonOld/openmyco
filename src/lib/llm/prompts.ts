@@ -74,6 +74,10 @@ export const KNOWLEDGE_DEEP_PROMPT = (
   ],
   "bestPractices": ["实践建议1", "实践建议2"],
   "commonMistakes": ["常见错误1", "常见错误2"],
+  "keyTerms": [
+    { "term": "关键术语1", "definition": "简短定义" },
+    { "term": "关键术语2", "definition": "简短定义" }
+  ],
   "estimatedTime": 30
 }
 
@@ -84,6 +88,7 @@ export const KNOWLEDGE_DEEP_PROMPT = (
 - examples: 至少1个示例，包含标题和解释；技术类主题需提供 code
 - bestPractices: 至少2条可操作的实践建议
 - commonMistakes: 至少2个学习者常犯的错误或误区
+- keyTerms: 3-5个关键术语，每个包含术语名称和简短定义（一句话）；如不适用可返回空数组
 - estimatedTime: 预计学习分钟数（整数）
 
 **质量要求**：

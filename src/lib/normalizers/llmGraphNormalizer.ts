@@ -188,6 +188,7 @@ export function normalizeDeepInfoResponse(
     examples?: Array<{ title: string; code?: string; explanation: string }>
     bestPractices?: string[]
     commonMistakes?: string[]
+    keyTerms?: Array<{ term: string; definition: string }>
   }
 ): Partial<KnowledgeNode> {
   return {
@@ -198,5 +199,6 @@ export function normalizeDeepInfoResponse(
     ...(deepInfo.examples && { examples: deepInfo.examples }),
     ...(deepInfo.bestPractices && { bestPractices: deepInfo.bestPractices }),
     ...(deepInfo.commonMistakes && { commonMistakes: deepInfo.commonMistakes }),
+    ...(deepInfo.keyTerms && { keyTerms: deepInfo.keyTerms }),
   }
 }

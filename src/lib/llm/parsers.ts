@@ -499,6 +499,7 @@ export function parseDeepResponse(content: string): {
   examples?: Array<{ title: string; code?: string; explanation: string }>
   bestPractices?: string[]
   commonMistakes?: string[]
+  keyTerms?: Array<{ term: string; definition: string }>
   estimatedTime?: number
 } | null {
   try {
@@ -506,6 +507,26 @@ export function parseDeepResponse(content: string): {
     if (!jsonStr) return null
 
     const data = JSON.parse(jsonStr)
+
+    // Parse keyTerms with defensive validation
+    let keyTerms: Array<{ term: string; definition: string }> | undefined
+    if (Array.isArray(data.keyTerms)) {
+      const filtered = (data.keyTerms as unknown[])
+        .filter((kt: unknown): kt is { term: string; definition: string } =>
+          typeof kt === 'object' && kt !== null
+          && typeof (kt as Record<string, unknown>).term === 'string'
+          && typeof (kt as Record<string, unknown>).definition === 'string'
+          && ((kt as Record<string, unknown>).term as string).trim() !== ''
+          && ((kt as Record<string, unknown>).definition as string).trim() !== ''
+        )
+        .map((kt) => ({
+          term: kt.term.trim(),
+          definition: kt.definition.trim(),
+        }))
+      if (filtered.length > 0) {
+        keyTerms = filtered
+      }
+    }
 
     return {
       title: data.title,
@@ -515,6 +536,7 @@ export function parseDeepResponse(content: string): {
       examples: data.examples,
       bestPractices: data.bestPractices,
       commonMistakes: data.commonMistakes,
+      keyTerms,
       estimatedTime: data.estimatedTime,
     }
   } catch (error) {

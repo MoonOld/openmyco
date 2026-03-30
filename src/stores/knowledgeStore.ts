@@ -182,10 +182,11 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           // ========== Step 2: 并行获取深度信息 ==========
           // 此时用户已经可以看到骨架结构
           const relatedTitles = skeleton.relatedTitles.map(r => r.title)
+          const subTopicTitles = skeleton.subTopics?.map(st => st.title)
 
           const [deepInfo, relatedInfo] = await Promise.all([
             // 线程 A: 获取主节点深度信息
-            client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription),
+            client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription, relatedTitles, subTopicTitles),
             // 线程 B: 获取关联知识描述
             client.getRelatedKnowledge(skeleton.node.title, relatedTitles),
           ])
@@ -202,6 +203,7 @@ export const useKnowledgeStore = create<KnowledgeState>()(
               ...(deepInfo.bestPractices && { bestPractices: deepInfo.bestPractices }),
               ...(deepInfo.commonMistakes && { commonMistakes: deepInfo.commonMistakes }),
               ...(deepInfo.keyTerms && { keyTerms: deepInfo.keyTerms }),
+              ...(deepInfo.subTopics && { subTopics: deepInfo.subTopics }),
             })
           }
 

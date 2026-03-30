@@ -210,6 +210,7 @@ export class LLMClient {
   async getKnowledgeSkeleton(topic: string): Promise<{
     node: { title: string; briefDescription: string; type: string; difficulty: number }
     relatedTitles: { title: string; type: string; relation: string }[]
+    subTopics?: Array<{ title: string }>
   } | null> {
     const messages: ChatMessage[] = [
       { role: 'system', content: '你是一个知识图谱助手。快速返回 JSON 格式的知识骨架。' },
@@ -225,7 +226,7 @@ export class LLMClient {
   /**
    * Step 2A: 获取知识深度信息（详细）
    */
-  async getKnowledgeDeep(topic: string, briefDescription: string): Promise<{
+  async getKnowledgeDeep(topic: string, briefDescription: string, relatedNodes?: string[], subTopicTitles?: string[]): Promise<{
     title: string
     description: string
     principle?: string
@@ -234,17 +235,18 @@ export class LLMClient {
     bestPractices?: string[]
     commonMistakes?: string[]
     keyTerms?: Array<{ term: string; definition: string }>
+    subTopics?: Array<{ title: string; description: string; keyPoints?: string[] }>
     estimatedTime?: number
   } | null> {
     const messages: ChatMessage[] = [
       { role: 'system', content: '你是一个知识讲解专家。返回详细的 JSON 格式知识内容。' },
-      { role: 'user', content: KNOWLEDGE_DEEP_PROMPT(topic, briefDescription) },
+      { role: 'user', content: KNOWLEDGE_DEEP_PROMPT(topic, briefDescription, relatedNodes, subTopicTitles) },
     ]
 
     const response = await this.chat(messages)
     if (!response) return null
 
-    return parseDeepResponse(response)
+    return parseDeepResponse(response, subTopicTitles)
   }
 
   /**
@@ -289,6 +291,7 @@ export class LLMClient {
   async getKnowledgeLayered(topic: string, onSkeleton?: (skeleton: {
     node: { title: string; briefDescription: string; type: string; difficulty: number }
     relatedTitles: { title: string; type: string; relation: string }[]
+    subTopics?: Array<{ title: string }>
   }) => void): Promise<LLMKnowledgeResponse | null> {
     // Step 1: 获取骨架
     const skeleton = await this.getKnowledgeSkeleton(topic)
@@ -299,10 +302,11 @@ export class LLMClient {
 
     // Step 2: 并行获取深度信息和关联描述
     const relatedTitles = skeleton.relatedTitles.map(r => r.title)
+    const subTopicTitles = skeleton.subTopics?.map(st => st.title)
 
     const [deepInfo, relatedInfo] = await Promise.all([
       // 线程 A: 获取深度信息
-      this.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription),
+      this.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription, undefined, subTopicTitles),
       // 线程 B: 获取关联知识描述
       this.getRelatedKnowledge(skeleton.node.title, relatedTitles),
     ])
@@ -327,6 +331,7 @@ export class LLMClient {
         bestPractices: deepInfo?.bestPractices,
         commonMistakes: deepInfo?.commonMistakes,
         keyTerms: deepInfo?.keyTerms,
+        subTopics: deepInfo?.subTopics,
       },
       prerequisites: [],
       postrequisites: [],

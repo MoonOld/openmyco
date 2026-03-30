@@ -22,6 +22,11 @@ export interface KnowledgeNode {
   bestPractices?: string[]
   commonMistakes?: string[]
   keyTerms?: Array<{ term: string; definition: string }>
+  subTopics?: Array<{
+    title: string
+    description: string
+    keyPoints?: string[]
+  }>
   // Operation status (for async operations like expand/create)
   operationStatus?: OperationStatus
   operationError?: string

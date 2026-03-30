@@ -450,12 +450,28 @@ export function extractErrorMessage(content: string): string | null {
 export function parseSkeletonResponse(content: string): {
   node: { title: string; briefDescription: string; type: string; difficulty: number }
   relatedTitles: { title: string; type: string; relation: string }[]
+  subTopics?: Array<{ title: string }>
 } | null {
   try {
     const jsonStr = extractJSON(content)
     if (!jsonStr) return null
 
     const data = JSON.parse(jsonStr)
+
+    // Parse subTopics with defensive validation
+    let subTopics: Array<{ title: string }> | undefined
+    if (Array.isArray(data.subTopics)) {
+      const filtered = (data.subTopics as unknown[])
+        .filter((st: unknown): st is { title: string } =>
+          typeof st === 'object' && st !== null
+          && typeof (st as Record<string, unknown>).title === 'string'
+          && ((st as Record<string, unknown>).title as string).trim() !== ''
+        )
+        .map((st) => ({ title: (st.title as string).trim() }))
+      if (filtered.length > 0) {
+        subTopics = filtered
+      }
+    }
 
     return {
       node: {
@@ -481,6 +497,7 @@ export function parseSkeletonResponse(content: string): {
           relation: 'related',
         })),
       ],
+      subTopics,
     }
   } catch (error) {
     console.error('Failed to parse skeleton response:', error)
@@ -491,7 +508,7 @@ export function parseSkeletonResponse(content: string): {
 /**
  * Parse deep response (Step 2A - detailed info)
  */
-export function parseDeepResponse(content: string): {
+export function parseDeepResponse(content: string, subTopicTitles?: string[]): {
   title: string
   description: string
   principle?: string
@@ -500,6 +517,7 @@ export function parseDeepResponse(content: string): {
   bestPractices?: string[]
   commonMistakes?: string[]
   keyTerms?: Array<{ term: string; definition: string }>
+  subTopics?: Array<{ title: string; description: string; keyPoints?: string[] }>
   estimatedTime?: number
 } | null {
   try {
@@ -528,6 +546,47 @@ export function parseDeepResponse(content: string): {
       }
     }
 
+    // Parse subTopics with defensive validation
+    let subTopics: Array<{ title: string; description: string; keyPoints?: string[] }> | undefined
+    if (Array.isArray(data.subTopics)) {
+      const filtered = (data.subTopics as unknown[])
+        .filter((st: unknown): st is { title: string; description: string; keyPoints?: unknown[] } =>
+          typeof st === 'object' && st !== null
+          && typeof (st as Record<string, unknown>).title === 'string'
+          && typeof (st as Record<string, unknown>).description === 'string'
+          && ((st as Record<string, unknown>).title as string).trim() !== ''
+          && ((st as Record<string, unknown>).description as string).trim() !== ''
+        )
+        .map((st) => {
+          const parsed: { title: string; description: string; keyPoints?: string[] } = {
+            title: st.title.trim(),
+            description: st.description.trim(),
+          }
+          if (Array.isArray(st.keyPoints)) {
+            const validPoints = st.keyPoints
+              .filter((kp: unknown): kp is string => typeof kp === 'string' && kp.trim() !== '')
+              .map((kp) => kp.trim())
+            if (validPoints.length > 0) {
+              parsed.keyPoints = validPoints
+            }
+          }
+          return parsed
+        })
+      if (filtered.length > 0) {
+        if (subTopicTitles && subTopicTitles.length > 0) {
+          const allowedSet = new Set(subTopicTitles.map((t) => t.trim().toLowerCase()))
+          const whitelisted = filtered.filter((st) =>
+            allowedSet.has(st.title.trim().toLowerCase())
+          )
+          if (whitelisted.length > 0) {
+            subTopics = whitelisted
+          }
+        } else {
+          subTopics = filtered
+        }
+      }
+    }
+
     return {
       title: data.title,
       description: data.description,
@@ -537,6 +596,7 @@ export function parseDeepResponse(content: string): {
       bestPractices: data.bestPractices,
       commonMistakes: data.commonMistakes,
       keyTerms,
+      subTopics,
       estimatedTime: data.estimatedTime,
     }
   } catch (error) {

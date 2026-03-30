@@ -350,9 +350,10 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
 
     // ========== Step 2: 并行获取深度信息（支持部分成功）==========
     const relatedTitles = skeleton.relatedTitles.map((r) => r.title)
+    const subTopicTitles = skeleton.subTopics?.map((st) => st.title)
 
     const [deepInfoResult, relatedInfoResult] = await Promise.allSettled([
-      client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription, relatedTitles),
+      client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription, relatedTitles, subTopicTitles),
       client.getRelatedKnowledge(skeleton.node.title, relatedTitles),
     ])
 

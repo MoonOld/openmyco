@@ -22,4 +22,5 @@ export {
 } from './card'
 export { Toast, ToastContainer } from './toast'
 export { Select } from './select'
+export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs'
 export { ResizablePanel } from './ResizablePanel'

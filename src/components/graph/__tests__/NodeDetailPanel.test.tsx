@@ -209,6 +209,32 @@ describe('NodeDetailPanel', () => {
       expect(screen.getByText('Mutating state directly')).toBeInTheDocument()
       expect(screen.getByText('Not using keys in lists')).toBeInTheDocument()
     })
+
+    it('should display keyTerms in overview tab', () => {
+      const node = createMockNode({
+        keyTerms: [
+          { term: 'Virtual DOM', definition: 'A lightweight copy of the real DOM' },
+          { term: 'Reconciliation', definition: 'React\'s algorithm for diffing virtual DOM trees' },
+        ],
+      })
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.getByText('关键术语')).toBeInTheDocument()
+      expect(screen.getByText('Virtual DOM')).toBeInTheDocument()
+      expect(screen.getByText(/A lightweight copy of the real DOM/)).toBeInTheDocument()
+      expect(screen.getByText('Reconciliation')).toBeInTheDocument()
+    })
+
+    it('should not show keyTerms section when keyTerms is empty', () => {
+      const node = createMockNode()
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.queryByText('关键术语')).not.toBeInTheDocument()
+    })
   })
 
   describe('relation navigation', () => {

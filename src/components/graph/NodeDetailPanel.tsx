@@ -142,6 +142,21 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
                   </div>
                 )}
 
+                {/* Key Terms */}
+                {selectedNode.keyTerms && selectedNode.keyTerms.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">关键术语</h4>
+                    <div className="space-y-2">
+                      {selectedNode.keyTerms.map((kt, index) => (
+                        <div key={index} className="text-sm">
+                          <span className="font-medium">{kt.term}</span>
+                          <span className="text-muted-foreground"> — {kt.definition}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Incoming relations */}
                 {incomingEdges.length > 0 && (
                   <div>

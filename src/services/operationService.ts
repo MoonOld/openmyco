@@ -46,8 +46,11 @@ export async function createGraph(topic: string): Promise<OperationResult> {
     }
   }
 
-  // 2. 创建临时节点
+  // 2. 先生成 operationId，用于 CAS 锁
+  const operationId = generateId()
   const tempNodeId = generateId()
+
+  // 3. 创建临时节点（含 activeOperationId）
   const tempNode: KnowledgeNode = {
     id: tempNodeId,
     title: topic,
@@ -57,16 +60,16 @@ export async function createGraph(topic: string): Promise<OperationResult> {
     createdAt: new Date(),
     updatedAt: new Date(),
     operationStatus: 'pending',
+    activeOperationId: operationId,
   }
 
-  // 3. 创建空图谱并设置临时节点
+  // 4. 创建空图谱并设置临时节点
   const { initEmptyGraphWithRoot } = useKnowledgeStore.getState()
   initEmptyGraphWithRoot(tempNode)
 
   const graphId = useKnowledgeStore.getState().currentGraph!.id
 
-  // 4. 记录操作
-  const operationId = generateId()
+  // 5. 记录操作
   useOperationStore.getState().startOperation({
     id: operationId,
     targetGraphId: graphId,
@@ -75,7 +78,7 @@ export async function createGraph(topic: string): Promise<OperationResult> {
     topic,
   })
 
-  // 5. 立即保存到 IndexedDB
+  // 6. 立即保存到 IndexedDB
   const { GraphRepository } = await import('@/lib/storage')
   await GraphRepository.save(useKnowledgeStore.getState().currentGraph!)
 
@@ -95,14 +98,16 @@ export async function createGraph(topic: string): Promise<OperationResult> {
 
     if (!response) {
       useOperationStore.getState().failOperation(operationId, 'LLM 未返回数据')
-      // 更新主节点状态为失败
+      // 更新主节点状态为失败，清除 activeOperationId（带 CAS）
       await useKnowledgeStore.getState().updateGraphById(graphId, {
         rootNodeId: tempNodeId,
         rootNodeUpdates: {
           operationStatus: 'failed',
           operationError: '未能获取知识图谱，请重试',
+          activeOperationId: undefined,
         },
         mutationType: 'meta',
+        expectedOperationId: operationId,
       })
       return {
         success: false,
@@ -134,15 +139,21 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       }
     }
 
-    // 9. 定向写入图谱
+    // 9. 定向写入图谱（带 CAS 校验）
     const result = await useKnowledgeStore.getState().updateGraphById(graphId, {
       rootNodeId: patch.rootNodeId,
-      rootNodeUpdates: patch.rootNodeUpdates,
+      rootNodeUpdates: {
+        ...patch.rootNodeUpdates,
+        operationStatus: 'success',
+        operationError: undefined,
+        activeOperationId: undefined,  // 操作完成，释放 CAS 锁
+      },
       newNodes: patch.newNodes,
       newEdges: patch.newEdges,
       graphName: patch.graphName,
       mutationType: 'structure',  // 新建图谱，始终是结构变更
       sourceOperationId: operationId,
+      expectedOperationId: operationId,
     })
 
     // 9. 更新操作状态
@@ -165,14 +176,18 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       operationId,
       error instanceof Error ? error.message : '未知错误'
     )
-    // 更新主节点状态为失败
+    // 更新主节点状态为失败，清除 activeOperationId（带 CAS）
     await useKnowledgeStore.getState().updateGraphById(graphId, {
       rootNodeId: tempNodeId,
       rootNodeUpdates: {
         operationStatus: 'failed',
         operationError: error instanceof Error ? error.message : '生成知识图谱时出错',
+        activeOperationId: undefined,
       },
       mutationType: 'meta',
+      expectedOperationId: operationId,
+    }).catch(() => {
+      // CAS 失败时忽略（操作已被新操作取代）
     })
     return {
       success: false,
@@ -255,6 +270,19 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     topic: node.title,
   })
 
+  // 写入 activeOperationId 到节点（获取 CAS 锁）
+  await useKnowledgeStore.getState().updateGraphById(graphId, {
+    rootNodeId: nodeId,
+    rootNodeUpdates: {
+      activeOperationId: operationId,
+      operationStatus: 'pending',
+      operationError: undefined,
+    },
+    mutationType: 'meta',
+  })
+
+  let skeletonNodeMap: Map<string, string> | undefined
+
   try {
     const { llmConfig } = useSettingsStore.getState()
     if (!llmConfig.apiKey) {
@@ -283,14 +311,14 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     }))
 
     // 记录骨架节点映射
-    const skeletonNodeMap = new Map<string, string>()
+    skeletonNodeMap = new Map<string, string>()
     skeleton.relatedTitles.forEach((r, i) => {
-      skeletonNodeMap.set(r.title, skeletonNodes[i]!.id)
+      skeletonNodeMap!.set(r.title, skeletonNodes[i]!.id)
     })
 
     // 创建骨架边
     const skeletonEdges: KnowledgeEdge[] = skeleton.relatedTitles.map((r) => {
-      const skeletonNodeId = skeletonNodeMap.get(r.title)!
+      const skeletonNodeId = skeletonNodeMap!.get(r.title)!
       return {
         id: generateId(),
         source: r.relation === 'prerequisite' ? skeletonNodeId : nodeId,
@@ -300,7 +328,7 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       }
     })
 
-    // 定向写入骨架（第一阶段）- 结构变更
+    // 定向写入骨架（第一阶段）- 结构变更（带 CAS）
     await useKnowledgeStore.getState().updateGraphById(graphId, {
       rootNodeId: nodeId,
       rootNodeUpdates: { expanded: true },
@@ -308,6 +336,7 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       newEdges: skeletonEdges,
       mutationType: 'structure',
       sourceOperationId: operationId,
+      expectedOperationId: operationId,
     })
 
     // ========== Step 2: 并行获取深度信息 ==========
@@ -331,11 +360,12 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       }
     }
 
-    // ========== Step 3: 更新节点内容 ==========
-    // 更新主节点 - 始终更新 operationStatus
+    // ========== Step 3: 批量更新节点内容 ==========
+    // 合并主节点 + 关联节点为一次写入，减少 IndexedDB 往返和竞态窗口
     const rootNodeUpdates: Partial<KnowledgeNode> = {
       operationStatus: 'success' as const,
-      operationError: undefined,  // 清理历史错误
+      operationError: undefined,
+      activeOperationId: undefined,  // 操作完成，释放 CAS 锁
     }
     if (deepInfo?.description) {
       Object.assign(rootNodeUpdates, {
@@ -349,13 +379,13 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       })
     }
 
-    // 更新关联节点
-    const nodeUpdates: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }> = []
+    // 关联节点更新列表
+    const batchNodeUpdates: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }> = []
     if (relatedInfo) {
       relatedInfo.forEach((info) => {
-        const skeletonNodeId = skeletonNodeMap.get(info.title)
+        const skeletonNodeId = skeletonNodeMap!.get(info.title)
         if (skeletonNodeId) {
-          nodeUpdates.push({
+          batchNodeUpdates.push({
             nodeId: skeletonNodeId,
             updates: {
               description: info.description,
@@ -368,24 +398,15 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       })
     }
 
-    // 定向写入深度信息（第二阶段）- 内容更新
-    // 先更新主节点
+    // 一次批量写入所有节点内容（带 CAS）
     await useKnowledgeStore.getState().updateGraphById(graphId, {
       rootNodeId: nodeId,
       rootNodeUpdates,
+      nodeUpdates: batchNodeUpdates,
       mutationType: 'content',
       sourceOperationId: operationId,
+      expectedOperationId: operationId,
     })
-
-    // 再逐个更新关联节点 - 内容更新
-    for (const { nodeId: updateNodeId, updates } of nodeUpdates) {
-      await useKnowledgeStore.getState().updateGraphById(graphId, {
-        rootNodeId: updateNodeId,
-        rootNodeUpdates: updates,
-        mutationType: 'content',
-        sourceOperationId: operationId,
-      })
-    }
 
     // 标记展开完成
     useKnowledgeStore.getState().setExpanded(nodeId, true)
@@ -401,30 +422,52 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
     }
   } catch (error) {
-    useOperationStore.getState().failOperation(
-      operationId,
-      error instanceof Error ? error.message : '未知错误'
-    )
-
-    // 并发安全校验：仅 pending 时才更新为 failed
+    // 先检查操作是否仍然有效，再标记失败
     const currentOp = useOperationStore.getState().getOperation(operationId)
-    if (currentOp?.status === 'pending' || !currentOp) {
-      await useKnowledgeStore.getState().updateGraphById(graphId, {
-        rootNodeId: nodeId,
-        rootNodeUpdates: {
-          operationStatus: 'failed',
-          operationError: error instanceof Error ? error.message : '展开节点时出错',
-        },
-        mutationType: 'meta',
-        sourceOperationId: operationId,
+    if (currentOp?.status === 'pending') {
+      useOperationStore.getState().failOperation(
+        operationId,
+        error instanceof Error ? error.message : '未知错误'
+      )
+    }
+
+    // 标记主节点为失败，清除 activeOperationId
+    const errorMessage = error instanceof Error ? error.message : '展开节点时出错'
+    const batchFailUpdates: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }> = []
+
+    // 骨架节点也标记为 failed
+    if (skeletonNodeMap) {
+      skeletonNodeMap.forEach((skeletonNodeId) => {
+        batchFailUpdates.push({
+          nodeId: skeletonNodeId,
+          updates: {
+            operationStatus: 'failed',
+            operationError: errorMessage,
+          },
+        })
       })
     }
+
+    await useKnowledgeStore.getState().updateGraphById(graphId, {
+      rootNodeId: nodeId,
+      rootNodeUpdates: {
+        operationStatus: 'failed',
+        operationError: errorMessage,
+        activeOperationId: undefined,
+      },
+      nodeUpdates: batchFailUpdates,
+      mutationType: 'meta',
+      sourceOperationId: operationId,
+      expectedOperationId: operationId,
+    }).catch(() => {
+      // CAS 校验失败时忽略（操作已被新操作取代）
+    })
 
     return {
       success: false,
       operationId,
       graphId,
-      error: error instanceof Error ? error.message : '展开节点时出错',
+      error: errorMessage,
       wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
     }
   } finally {
@@ -437,30 +480,38 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
 
 /**
  * 恢复未完成的操作（页面加载时调用）
+ * 从 IndexedDB 读取所有图谱，检查 pending 节点
  */
 export async function resumePendingOperations(): Promise<void> {
-  const { currentGraph } = useKnowledgeStore.getState()
-  if (!currentGraph) return
+  const { GraphRepository } = await import('@/lib/storage')
+  const { storedToRuntime } = await import('@/lib/storage')
 
-  // 检查图谱中是否有 pending 状态的节点
-  const pendingNodes = Array.from(currentGraph.nodes.values()).filter(
-    (node) => node.operationStatus === 'pending'
-  )
+  const allStored = await GraphRepository.getAll()
+  let totalPending = 0
 
-  if (pendingNodes.length === 0) return
+  for (const stored of allStored) {
+    const graph = storedToRuntime(stored)
+    const pendingNodes = Array.from(graph.nodes.values()).filter(
+      (node) => node.operationStatus === 'pending'
+    )
 
-  console.log(`[OperationService] 发现 ${pendingNodes.length} 个未完成的节点`)
+    if (pendingNodes.length === 0) continue
+    totalPending += pendingNodes.length
 
-  // TODO: 提供恢复选项，或者自动重试
-  // 目前先标记为失败，让用户手动重试
-  for (const node of pendingNodes) {
-    await useKnowledgeStore.getState().updateGraphById(currentGraph.id, {
-      rootNodeId: node.id,
-      rootNodeUpdates: {
-        operationStatus: 'failed',
-        operationError: '操作中断，请点击重试',
-      },
-      mutationType: 'meta',  // 只是状态更新
-    })
+    for (const node of pendingNodes) {
+      await useKnowledgeStore.getState().updateGraphById(graph.id, {
+        rootNodeId: node.id,
+        rootNodeUpdates: {
+          operationStatus: 'failed',
+          operationError: '操作中断，请点击重试',
+          activeOperationId: undefined,
+        },
+        mutationType: 'meta',
+      })
+    }
+  }
+
+  if (totalPending > 0) {
+    console.log(`[OperationService] 恢复完成：${totalPending} 个节点标记为失败`)
   }
 }

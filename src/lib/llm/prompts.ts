@@ -59,30 +59,39 @@ export const KNOWLEDGE_DEEP_PROMPT = (
 
 **简介**：${briefDescription}
 
-请以 JSON 格式返回以下深度信息：
+请以 JSON 格式返回以下深度信息，**所有字段都是必填的，不可省略**：
 {
   "title": "知识点标题",
-  "description": "详细描述（3-5句话，说明这个知识点的核心内容）",
-  "principle": "原理说明（这个知识点背后的原理或机制）",
+  "description": "详细描述（3-5句话，说明这个知识点的核心内容、学习价值）",
+  "principle": "原理说明（这个知识点背后的原理、机制或核心思想。至少2句话）",
   "useCases": ["应用场景1", "应用场景2", "应用场景3"],
   "examples": [
     {
       "title": "示例标题",
-      "code": "代码示例（如果是技术类）",
-      "explanation": "示例解释"
+      "code": "代码示例（技术类主题必填；非技术类可改为"无"）",
+      "explanation": "示例解释（说明这个示例展示了什么）"
     }
   ],
   "bestPractices": ["实践建议1", "实践建议2"],
   "commonMistakes": ["常见错误1", "常见错误2"],
-  "estimatedTime": 预计学习分钟数
+  "estimatedTime": 30
 }
 
-**要求**：
-- 提供实用的、具体的内容
-- 示例要简洁但能说明问题
-- 实践建议要有可操作性
+**字段要求**：
+- description: 3-5句话，涵盖核心概念和学习价值
+- principle: 至少2句话，说明背后的原理或机制
+- useCases: 至少2个具体的应用场景
+- examples: 至少1个示例，包含标题和解释；技术类主题需提供 code
+- bestPractices: 至少2条可操作的实践建议
+- commonMistakes: 至少2个学习者常犯的错误或误区
+- estimatedTime: 预计学习分钟数（整数）
 
-请深入讲解 "${topic}"。`
+**质量要求**：
+- 内容必须具体、实用，避免空泛描述
+- 示例要简洁但能说明问题
+- 实践建议要有可操作性，不要泛泛而谈
+
+请深入讲解 "${topic}"，返回完整的 JSON。`
 
 /**
  * Step 2B: 关联知识 Prompt - 获取关联节点的简洁描述

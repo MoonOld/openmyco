@@ -225,7 +225,7 @@ export class LLMClient {
   /**
    * Step 2A: 获取知识深度信息（详细）
    */
-  async getKnowledgeDeep(topic: string, briefDescription: string): Promise<{
+  async getKnowledgeDeep(topic: string, briefDescription: string, relatedNodes?: string[]): Promise<{
     title: string
     description: string
     principle?: string
@@ -239,7 +239,7 @@ export class LLMClient {
   } | null> {
     const messages: ChatMessage[] = [
       { role: 'system', content: '你是一个知识讲解专家。返回详细的 JSON 格式知识内容。' },
-      { role: 'user', content: KNOWLEDGE_DEEP_PROMPT(topic, briefDescription) },
+      { role: 'user', content: KNOWLEDGE_DEEP_PROMPT(topic, briefDescription, relatedNodes) },
     ]
 
     const response = await this.chat(messages)

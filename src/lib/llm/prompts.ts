@@ -54,11 +54,15 @@ export const KNOWLEDGE_SKELETON_PROMPT = (topic: string) => `请为知识点"${t
  */
 export const KNOWLEDGE_DEEP_PROMPT = (
   topic: string,
-  briefDescription: string
+  briefDescription: string,
+  relatedNodes?: string[]
 ) => `请深入讲解知识点"${topic}"。
 
 **简介**：${briefDescription}
-
+${relatedNodes && relatedNodes.length > 0 ? `
+**已有的关联知识节点**（以下知识已经作为独立节点存在图中，请勿在 subTopics 中重复）：
+${relatedNodes.map((n) => `- ${n}`).join('\n')}
+` : ''}
 请以 JSON 格式返回以下深度信息，**所有字段都是必填的，不可省略**：
 {
   "title": "知识点标题",
@@ -92,7 +96,7 @@ export const KNOWLEDGE_DEEP_PROMPT = (
 - bestPractices: 至少2条可操作的实践建议
 - commonMistakes: 至少2个学习者常犯的错误或误区
 - keyTerms: 3-5个关键术语，每个包含术语名称和简短定义（一句话）；如不适用可返回空数组
-- subTopics: 3-5个子话题，每个包含标题、简短描述和可选要点列表。子话题是当前知识点的细分方向（如"React Hooks"的子话题可以是"State Hooks"、"Effect Hooks"），而非独立的前置/后置知识。如不适用可返回空数组
+- subTopics: 3-5个子话题，每个包含标题、简短描述和可选要点列表。子话题是当前知识点的**细分方向**（如"React Hooks"的子话题可以是"State Hooks"、"Effect Hooks"），**必须与已有的关联知识节点区分开**，不要把关联节点重复列为子话题。如不适用可返回空数组
 - estimatedTime: 预计学习分钟数（整数）
 
 **质量要求**：

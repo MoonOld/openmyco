@@ -185,7 +185,7 @@ export const useKnowledgeStore = create<KnowledgeState>()(
 
           const [deepInfo, relatedInfo] = await Promise.all([
             // 线程 A: 获取主节点深度信息
-            client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription),
+            client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription, relatedTitles),
             // 线程 B: 获取关联知识描述
             client.getRelatedKnowledge(skeleton.node.title, relatedTitles),
           ])

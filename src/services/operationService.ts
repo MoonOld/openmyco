@@ -352,7 +352,7 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     const relatedTitles = skeleton.relatedTitles.map((r) => r.title)
 
     const [deepInfoResult, relatedInfoResult] = await Promise.allSettled([
-      client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription),
+      client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription, relatedTitles),
       client.getRelatedKnowledge(skeleton.node.title, relatedTitles),
     ])
 

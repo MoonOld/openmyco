@@ -139,6 +139,22 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     }
   }, [currentGraph?.id, fitView])
 
+  // 结构变更后 fitView（新节点加入时重新适应视图）
+  const structureNodeCountRef = useRef(0)
+  useEffect(() => {
+    if (!currentGraph) return
+    const count = currentGraph.nodes.size
+    // 首次加载由 currentGraph?.id 的 effect 处理，只关注后续的节点增加
+    if (count > structureNodeCountRef.current && structureNodeCountRef.current > 0) {
+      const timer = setTimeout(() => {
+        fitView({ duration: 300, padding: 0.2 })
+      }, 300)
+      structureNodeCountRef.current = count
+      return () => clearTimeout(timer)
+    }
+    structureNodeCountRef.current = count
+  }, [currentGraph?.nodes.size, fitView, currentGraph])
+
   // 处理节点展开（包装 expandNode 以显示 toast）
   const handleExpandNode = useCallback(async (nodeId: string) => {
     const result = await expandNode(nodeId)

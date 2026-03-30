@@ -7,6 +7,8 @@ export interface LLMConfig {
   maxTokens?: number
   /** API endpoint path (e.g., 'chat/completions', 'chat/responses'). If not specified, will auto-detect. */
   endpoint?: string
+  /** Maximum concurrent API requests. Default: 5, Range: 1-10 */
+  maxConcurrency?: number
 }
 
 // Chat message type
@@ -58,4 +60,5 @@ export const DEFAULT_LLM_CONFIG: Omit<LLMConfig, 'apiKey'> = {
   model: 'gpt-4o-mini',
   temperature: 0.7,
   maxTokens: 4000,
+  maxConcurrency: 1,
 }

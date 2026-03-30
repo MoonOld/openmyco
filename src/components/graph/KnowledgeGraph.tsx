@@ -146,7 +146,7 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     // 如果操作成功但用户已切换到其他图谱，显示 toast 提示
     if (result.success && !result.wasCurrentGraph) {
       addToast({
-        type: 'success',
+        variant: 'default',
         title: '节点展开完成',
         description: `图谱 "${result.graphName}" 中的节点已在后台展开完成`,
       })
@@ -346,7 +346,9 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     if (!autoLayout) return
 
     const handleGraphUpdate = (event: GraphUpdateEvent) => {
-      const detail: GraphUpdateEventDetail = event.detail
+      const detail: GraphUpdateEventDetail | undefined = event.detail
+      // 跳过无 detail 的事件（来自 GraphRepository.save 的列表刷新通知）
+      if (!detail) return
 
       // 只响应当前图谱的结构变更
       if (detail.graphId !== currentGraph?.id) return

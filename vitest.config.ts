@@ -7,8 +7,16 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    testTimeout: 300000, // 5 minutes for LLM API calls
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/__tests__/**/*.{test,spec}.{ts,tsx}', 'src/**/*.{test,spec}.{ts,tsx}'],
+    include: [
+      'src/**/__tests__/**/*.{test,spec}.{ts,tsx}',
+      'src/**/*.{test,spec}.{ts,tsx}',
+      'src/**/__benchmarks__/**/*.{test,spec}.{ts,tsx}',
+    ],
+    benchmark: {
+      include: ['src/**/*.{bench,benchmark}.{ts,tsx}'],
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],

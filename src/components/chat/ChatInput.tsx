@@ -57,7 +57,7 @@ export function ChatInput({ className }: ChatInputProps) {
       if (!result.wasCurrentGraph) {
         console.log(`[ChatInput] 图谱 "${result.graphName}" 已在后台生成完成`)
         addToast({
-          type: 'success',
+          variant: 'default',
           title: '图谱生成完成',
           description: `图谱 "${result.graphName}" 已在后台生成完成`,
         })

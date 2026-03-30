@@ -14,6 +14,7 @@ import {
   NODE_EXPAND_PROMPT,
   NODE_EXPLAIN_PROMPT,
 } from './prompts'
+import pLimit from 'p-limit'
 
 // Aliases for clarity
 const KNOWLEDGE_SKELETON_PROMPT = KNOWLEDGE_SKELETON_PROMPT_FN
@@ -34,9 +35,10 @@ const getEndpointCacheKey = (baseURL: string, model: string) =>
 export class LLMClient {
   private config: LLMConfig
   private workingEndpoint: Endpoint | null = null
+  // 并发限制器
+  private limit: ReturnType<typeof pLimit>
   // 记录端点探测时的最后一个错误（用于 testConnection 返回详细错误）
-  private lastDetectionError:
-    | {
+  private lastDetectionError:    | {
         type: 'http'
         status: number
         statusText: string
@@ -50,6 +52,9 @@ export class LLMClient {
 
   constructor(config: LLMConfig) {
     this.config = config
+    // 初始化并发限制器，默认 5 个并发
+    const concurrency = Math.max(1, Math.min(10, config.maxConcurrency ?? 5))
+    this.limit = pLimit(concurrency)
     // 如果用户指定了端点，优先使用
     if (config.endpoint && POSSIBLE_ENDPOINTS.includes(config.endpoint as Endpoint)) {
       this.workingEndpoint = config.endpoint as Endpoint
@@ -422,8 +427,16 @@ export class LLMClient {
   /**
    * Send a chat request to the LLM API
    * 支持自动 fallback 到不同的端点
+   * 支持并发限制
    */
-  private async chat(messages: ChatMessage[]): Promise<string | null> {
+  async chat(messages: ChatMessage[]): Promise<string | null> {
+    return this.limit(() => this.doChat(messages))
+  }
+
+  /**
+   * 实际执行 chat 请求（内部方法）
+   */
+  private async doChat(messages: ChatMessage[]): Promise<string | null> {
     const endpoint = await this.getEndpoint()
 
     try {
@@ -471,7 +484,7 @@ export class LLMClient {
       }
 
       const data: OpenAIChatResponse = await response.json()
-      const content = data.choices[0]?.message?.content
+      const content = data.choices?.[0]?.message?.content
 
       if (!content) {
         console.error('Empty response from LLM')

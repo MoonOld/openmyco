@@ -4,7 +4,6 @@ import type { LLMConfig } from '@/types'
 
 // Mock fetch globally
 const mockFetch = vi.fn()
-// @ts-expect-error - vitest handles this
 global.fetch = mockFetch
 
 // Mock localStorage

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { ReactFlowProvider } from 'reactflow'
 import { MainLayout } from './components/layout'
 import { ChatInterface } from './components/chat'
 import { SettingsDialog, ExportDialog, ImportDialog } from './components/settings'
@@ -44,12 +45,14 @@ function App() {
   }, [theme])
 
   return (
-    <MainLayout>
-      <ChatInterface />
-      <SettingsDialog />
-      <ExportDialog />
-      <ImportDialog />
-    </MainLayout>
+    <ReactFlowProvider>
+      <MainLayout>
+        <ChatInterface />
+        <SettingsDialog />
+        <ExportDialog />
+        <ImportDialog />
+      </MainLayout>
+    </ReactFlowProvider>
   )
 }
 

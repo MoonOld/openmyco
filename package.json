@@ -30,6 +30,7 @@
     "test:api": "node --test ./test-api.ts",
     "bench": "vitest bench --run",
     "test:perf": "vitest run src/__benchmarks__",
+    "test:llm": "vitest run src/__tests__/llm.integration.test.ts",
     "generate:icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {

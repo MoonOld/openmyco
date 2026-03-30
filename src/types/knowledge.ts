@@ -24,6 +24,8 @@ export interface KnowledgeNode {
   // Operation status (for async operations like expand/create)
   operationStatus?: OperationStatus
   operationError?: string
+  // CAS concurrency control: the operationId currently "owning" this node
+  activeOperationId?: string
 }
 
 // Relation type

@@ -11,38 +11,149 @@
 
 #### PR P0-1: 操作上下文强约束
 - **标题**: 杜绝跨图谱回写污染
-- **改动文件**:
-  - `src/services/operationService.ts`
-  - `src/stores/operationStore.ts`
-  - `src/stores/knowledgeStore.ts`
-  - `src/services/__tests__/operationService.test.ts`
-- **改动内容**:
-  1. 为同一 `graphId + nodeId` 的操作增加版本/失效机制
-  2. 在每次异步写入前做 `operationId` 有效性校验
-  3. `updateGraphById` 仅按 `targetGraphId` 定向写入
 - **风险**: 可能误判为"过期操作"导致写入被拒绝（中风险）
 - **验收**:
   - [ ] 并发测试通过：旧请求不会覆盖新请求
   - [ ] 切换到图谱 B 时，图谱 A 后台完成不会污染 B
   - [ ] lint + typecheck + test 全通过
 
+##### P0-1 Step 1: updateGraphById 增加 CAS 前置校验
+
+**问题**: `updateGraphById` 无前置条件检查，`rootNodeId` 不存在也返回 success，异步操作之间无互斥。
+
+**改动文件**: `src/stores/knowledgeStore.ts`
+
+**具体改动**:
+1. `updateGraphById` 的 `updates` 参数增加可选字段 `expectedOperationId?: string`
+2. 在写入前校验：若 `expectedOperationId` 存在，从 IndexedDB 加载图谱后检查该图谱中 `rootNodeId` 对应节点的 `operationStatus`
+   - 若节点不存在 → 返回 `{ success: false, error: '目标节点不存在' }`
+   - 若 `operationStatus` 已经是 `'success'` → 说明有更新操作已完成，返回 `{ success: false, error: '操作冲突：节点已完成更新' }`
+3. 校验通过后继续执行原有写入逻辑
+4. `UpdateGraphResult` 增加 `conflict?: boolean` 字段标记冲突
+
+**不改动的**: `operationStore.version` 目前固定为 1 且 `getLatestOperationForNode` 排序逻辑未使用 version，暂不引入 version 自增机制，避免过度设计。
+
+##### P0-1 Step 2: resumePendingOperations 改为从 IndexedDB 读取
+
+**问题**: `resumePendingOperations` 从 `currentGraph` 读取 pending 节点，但 `currentGraph` 来自 Zustand persist（可能是旧的快照），导致遗漏或误判。
+
+**改动文件**: `src/services/operationService.ts`
+
+**具体改动**:
+1. 改为先通过 `GraphRepository.getAll()` 获取所有图谱
+2. 遍历每个图谱（不仅是 currentGraph），找出 `operationStatus === 'pending'` 的节点
+3. 对每个图谱中的 pending 节点标记为 `failed`
+4. 若图谱是 currentGraph，额外触发 `setCurrentGraph` 刷新 UI
+
+##### P0-1 Step 3: 修复 isCurrentGraph 竞态
+
+**问题**: `updateGraphById` 在函数开头计算 `isCurrentGraph = get().currentGraph?.id === graphId`，但中间有 `await GraphRepository.save(graph)` 异步操作。在 await 期间用户可能切换了图谱，导致旧的 `isCurrentGraph` 值不准。
+
+**改动文件**: `src/stores/knowledgeStore.ts`
+
+**具体改动**:
+1. 将 `isCurrentGraph` 的判断从函数开头移到 `await GraphRepository.save()` 之后、`set()` 之前
+2. 在 `set({ currentGraph: graph })` 前重新读取 `get().currentGraph?.id === graphId`
+3. 确保只在确实匹配时更新 `currentGraph`
+
+##### P0-1 Step 4: LLMClient 实例复用
+
+**问题**: `createLLMClient()` 每次创建新实例，内部 `p-limit` 并发限制是 per-instance 的，导致 `maxConcurrency: 1` 无法在多个操作之间生效。
+
+**改动文件**: `src/lib/llm/client.ts`
+
+**具体改动**:
+1. 新增模块级缓存 `let cachedClient: LLMClient | null = null` 和 `let cachedConfigKey: string | null = null`
+2. `createLLMClient` 改为：若 config 的 `baseURL + model + apiKey` 与缓存一致，返回缓存的实例
+3. config 变更时创建新实例并替换缓存
+4. 这样同一个 config 下所有操作共享同一个 p-limit 实例
+
+##### P0-1 测试
+
+**改动文件**: `src/services/__tests__/operationService.test.ts`（新增/更新）
+
+**测试用例**:
+1. CAS 前置校验：操作已完成时不允许覆盖
+2. 竞态测试：await 期间切换图谱后，不会写入错误的 currentGraph
+3. resumePendingOperations：图谱不是 currentGraph 时也能正确恢复
+4. LLMClient 复用：相同 config 返回同一实例
+
+---
+
 #### PR P0-2: 临时节点生命周期统一
-- **标题**: pending/success/failed/cancelled 状态机
-- **改动文件**:
-  - `src/types/knowledge.ts`
-  - `src/services/operationService.ts`
-  - `src/components/graph/GraphNode.tsx`
-  - `src/components/graph/KnowledgeGraph.tsx`
-  - `src/components/graph/__tests__/KnowledgeGraph.test.tsx`
-- **改动内容**:
-  1. 临时节点全流程状态机化
-  2. 成功时保留原临时节点 ID，只覆盖内容
-  3. UI 明确区分"加载中/失败/已完成"交互态
+- **标题**: pending/success/failed 状态机
 - **风险**: UI 状态与 store 状态不一致（中风险）
 - **验收**:
   - [ ] 失败节点可重试且不生成新 node id
   - [ ] 不出现"删临时节点再新建"的行为
   - [ ] 相关组件测试通过
+
+##### P0-2 Step 1: 修复 expandNode catch 块顺序
+
+**问题**: `expandNode` 的 catch 块（operationService.ts:403-421）先调用 `failOperation`，然后再检查 `currentOp?.status === 'pending'`。但 `failOperation` 内部已经会检查 `op.status === 'pending'` 才更新，所以外层的 pending 检查是冗余的——更重要的是，骨架节点不会被标记为 failed。
+
+**改动文件**: `src/services/operationService.ts`
+
+**具体改动**:
+1. catch 块中：先检查操作有效性，再执行 failOperation 和 updateGraphById
+2. 新增：将所有骨架节点也标记为 `operationStatus: 'failed'`（遍历 `skeletonNodeMap`）
+3. 确保骨架节点不会永久停留在 `pending` 状态
+
+##### P0-2 Step 2: 骨架节点使用 Promise.allSettled 确保全部终结
+
+**问题**: `expandNode` 中 `Promise.all([getKnowledgeDeep, getRelatedKnowledge])` 如果其中一个失败，另一个的结果也会丢失，且骨架节点不会更新为成功/失败。
+
+**改动文件**: `src/services/operationService.ts`
+
+**具体改动**:
+1. 将 `Promise.all` 改为 `Promise.allSettled`
+2. 分别处理 deepInfo 和 relatedInfo 的 fulfilled/rejected 结果
+3. 即使其中一个失败，另一个成功的结果也要写入
+4. 只有两个都失败时才将主节点标记为 `failed`
+
+##### P0-2 Step 3: 统一 transitionNodeStatus 函数
+
+**问题**: 节点状态转换逻辑散落在 operationService 各处，模式重复：设 operationStatus、清理 operationError 等。
+
+**改动文件**: `src/services/operationService.ts`
+
+**具体改动**:
+1. 新增辅助函数 `transitionNodeStatus(nodeId, graphId, newStatus, error?)`
+2. 内部调用 `updateGraphById`，统一处理 `operationStatus`/`operationError` 字段
+3. 将 createGraph 和 expandNode 中的重复状态转换代码替换为调用此函数
+4. 函数签名：
+   ```typescript
+   async function transitionNodeStatus(
+     nodeId: string,
+     graphId: string,
+     status: 'pending' | 'success' | 'failed',
+     error?: string
+   ): Promise<void>
+   ```
+
+##### P0-2 Step 4: UI 语义对齐
+
+**问题**: GraphNode 组件需要根据 `operationStatus` 展示不同交互态。
+
+**改动文件**:
+- `src/components/graph/GraphNode.tsx`
+
+**具体改动**:
+1. `operationStatus === 'pending'` + `loadingNodes.has(nodeId)` → 显示加载动画（旋转图标 + "正在获取知识..."）
+2. `operationStatus === 'pending'` + 不在 loadingNodes → 显示 "等待中" 灰色态
+3. `operationStatus === 'failed'` → 显示错误图标 + 错误信息 + 重试按钮
+4. `operationStatus === 'success'` 或 undefined → 正常态
+5. 重试按钮调用 `onRetry`（已有），不生成新 node id
+
+##### P0-2 测试
+
+**改动文件**: `src/components/graph/__tests__/KnowledgeGraph.test.tsx`（新增/更新）
+
+**测试用例**:
+1. 骨架节点全部终结：Promise.allSettled 部分成功时，成功的节点正常更新
+2. catch 块骨架标记：异常时所有骨架节点变为 failed
+3. UI 状态映射：pending/failed/success 分别对应正确的 UI 元素
+4. 重试不生成新 ID：failed → pending 转换保留原 nodeId
 
 #### PR P0-3: 黄金路径回归测试
 - **标题**: 首图生成 + 节点展开链路测试

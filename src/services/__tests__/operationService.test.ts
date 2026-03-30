@@ -305,4 +305,87 @@ describe('operationService - 核心逻辑测试', () => {
       }
     })
   })
+
+  describe('Test 6: expandNode - finally 清理 loadingNodes', () => {
+    it('无论成功失败，loadingNodes 都应被清理', async () => {
+      const node1 = createMockNode('node-1', '测试节点', { expanded: false })
+      const graph = createMockGraph('graph-1', '测试图谱', [node1])
+      useKnowledgeStore.setState({
+        currentGraph: graph,
+        expandedNodeIds: new Set(),
+        loadingNodes: new Set(),
+      })
+
+      // Mock LLM to throw
+      vi.doMock('@/lib/llm', () => ({
+        createLLMClient: vi.fn().mockReturnValue({
+          getKnowledgeSkeleton: vi.fn().mockRejectedValue(new Error('LLM error')),
+        }),
+      }))
+
+      const { expandNode } = await import('../operationService')
+      await expandNode('node-1')
+
+      // loadingNodes should be empty after finally
+      expect(useKnowledgeStore.getState().loadingNodes.has('node-1')).toBe(false)
+      expect(useKnowledgeStore.getState().loading).toBe(false)
+    })
+  })
+
+  describe('Test 7: resumePendingOperations - 从 IndexedDB 读取', () => {
+    it('应处理空数据库', async () => {
+      vi.doMock('@/lib/storage', () => ({
+        GraphRepository: {
+          getAll: vi.fn().mockResolvedValue([]),
+          getById: vi.fn().mockResolvedValue(null),
+          save: vi.fn().mockResolvedValue(undefined),
+        },
+        storedToRuntime: vi.fn(),
+      }))
+
+      const { resumePendingOperations } = await import('../operationService')
+      // Should not throw
+      await expect(resumePendingOperations()).resolves.toBeUndefined()
+    })
+
+    it('应将 pending 节点标记为 failed', async () => {
+      const mockGraph = createMockGraph('graph-1', 'Test', [
+        createMockNode('node-1', 'Root', { operationStatus: 'pending' }),
+        createMockNode('node-2', 'Child', { operationStatus: 'success' }),
+      ])
+
+      const saveFn = vi.fn().mockResolvedValue(undefined)
+      const updateGraphByIdSpy = vi.fn().mockResolvedValue({ success: true })
+
+      vi.doMock('@/lib/storage', () => ({
+        GraphRepository: {
+          getAll: vi.fn().mockResolvedValue([mockGraph]),
+          getById: vi.fn().mockResolvedValue(mockGraph),
+          save: saveFn,
+        },
+        storedToRuntime: vi.fn(() => mockGraph),
+      }))
+
+      // Override updateGraphById to spy on calls
+      const origUpdate = useKnowledgeStore.getState().updateGraphById
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      useKnowledgeStore.setState({ updateGraphById: updateGraphByIdSpy } as any)
+
+      const { resumePendingOperations } = await import('../operationService')
+      await resumePendingOperations()
+
+      // Should have called updateGraphById for the pending node
+      expect(updateGraphByIdSpy).toHaveBeenCalledWith('graph-1', expect.objectContaining({
+        rootNodeId: 'node-1',
+        rootNodeUpdates: expect.objectContaining({
+          operationStatus: 'failed',
+          activeOperationId: undefined,
+        }),
+      }))
+
+      // Restore
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      useKnowledgeStore.setState({ updateGraphById: origUpdate } as any)
+    })
+  })
 })

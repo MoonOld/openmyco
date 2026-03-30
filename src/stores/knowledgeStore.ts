@@ -26,6 +26,7 @@ export interface UpdateGraphResult {
   isCurrentGraph: boolean       // 是否是当前显示的图谱
   graphName: string             // 图谱名称（用于 toast 提示）
   error?: string
+  conflict?: boolean            // CAS 校验失败（并发冲突）
 }
 
 interface KnowledgeState {
@@ -70,6 +71,8 @@ interface KnowledgeState {
       graphName?: string
       mutationType?: GraphMutationType  // 由调用方决定
       sourceOperationId?: string        // 操作来源追踪
+      expectedOperationId?: string      // CAS 校验：节点当前的 activeOperationId 应匹配
+      nodeUpdates?: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }>  // 批量节点更新
     }
   ) => Promise<UpdateGraphResult>
 }
@@ -381,6 +384,9 @@ export const useKnowledgeStore = create<KnowledgeState>()(
       /**
        * 定向更新图谱（不依赖 currentGraph）
        * 用于异步操作完成后，将数据写入正确的图谱
+       *
+       * CAS 机制：若 expectedOperationId 存在，校验目标节点的 activeOperationId 是否匹配。
+       * 这可以防止旧的异步操作覆盖新操作的结果。
        */
       updateGraphById: async (graphId, updates) => {
         try {
@@ -396,7 +402,29 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           }
 
           const graph = storedToRuntime(stored)
-          const isCurrentGraph = get().currentGraph?.id === graphId
+
+          // CAS 校验：检查 activeOperationId 是否匹配
+          if (updates.expectedOperationId) {
+            const rootNode = graph.nodes.get(updates.rootNodeId)
+            if (!rootNode) {
+              return {
+                success: false,
+                isCurrentGraph: false,
+                graphName: '',
+                error: 'CAS 校验失败：目标节点不存在',
+                conflict: true,
+              }
+            }
+            if (rootNode.activeOperationId !== updates.expectedOperationId) {
+              return {
+                success: false,
+                isCurrentGraph: false,
+                graphName: '',
+                error: 'CAS 校验失败：操作已被替换',
+                conflict: true,
+              }
+            }
+          }
 
           // 更新根节点
           const rootNode = graph.nodes.get(updates.rootNodeId)
@@ -406,6 +434,20 @@ export const useKnowledgeStore = create<KnowledgeState>()(
               ...updates.rootNodeUpdates,
               updatedAt: new Date(),
             })
+          }
+
+          // 批量更新其他节点
+          if (updates.nodeUpdates) {
+            for (const { nodeId, updates: nodeUpd } of updates.nodeUpdates) {
+              const node = graph.nodes.get(nodeId)
+              if (node) {
+                graph.nodes.set(nodeId, {
+                  ...node,
+                  ...nodeUpd,
+                  updatedAt: new Date(),
+                })
+              }
+            }
           }
 
           // 添加新节点
@@ -435,7 +477,8 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           // 保存到 IndexedDB
           await GraphRepository.save(graph)
 
-          // 如果是当前图谱，同步更新 currentGraph
+          // isCurrentGraph 在 save 之后重新检查（修复竞态）
+          const isCurrentGraph = get().currentGraph?.id === graphId
           if (isCurrentGraph) {
             set({ currentGraph: graph })
           }

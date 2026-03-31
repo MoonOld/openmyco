@@ -204,7 +204,6 @@ export async function createGraph(topic: string): Promise<OperationResult> {
         expandStatus: 'success',
         expandError: undefined,
         activeExpandOpId: undefined,  // 操作完成，释放 CAS 锁
-        deepenStatus: 'success',      // 创建图谱时 LLM 已返回深度内容
       },
       newNodes: patch.newNodes,
       newEdges: patch.newEdges,
@@ -214,13 +213,17 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       expectedExpandOpId: operationId,
     })
 
-    // 标记扩展和深化完成
+    // 标记扩展完成
     useKnowledgeStore.getState().setExpanded(tempNodeId, true)
-    useKnowledgeStore.getState().setDeepened(tempNodeId, true)
 
     // 9. 更新操作状态
     if (result.success) {
       useOperationStore.getState().completeOperation(operationId)
+
+      // 10. 自动深化根节点（createGraph 只获取骨架，深度内容需要额外调用）
+      deepenOnly(tempNodeId).catch((err) => {
+        console.warn('[createGraph] 自动深化根节点失败:', err)
+      })
     } else {
       useOperationStore.getState().failOperation(operationId, result.error || '更新图谱失败')
     }

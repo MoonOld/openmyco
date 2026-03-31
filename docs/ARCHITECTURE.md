@@ -112,14 +112,27 @@ interface KnowledgeNode {
   title: string
   description: string
   type: 'concept' | 'skill' | 'tool' | 'theory'
-  operationStatus?: 'pending' | 'success' | 'failed'
   difficulty?: 1-5
   estimatedTime?: number
   expanded: boolean
   position?: { x, y }
   createdAt: Date
   updatedAt: Date
-  // 深度知识字段（可选）
+
+  // 扩展操作状态（结构：骨架 → 去重 → 节点/边）
+  expandStatus?: 'pending' | 'success' | 'failed'
+  expandError?: string
+  activeExpandOpId?: string         // CAS 锁
+
+  // 深化操作状态（内容：深度信息 + 关联描述）
+  deepenStatus?: 'pending' | 'success' | 'failed'
+  deepenError?: string
+  activeDeepenOpId?: string         // CAS 锁
+
+  /** @deprecated 使用 expandStatus + deepenStatus 替代 */
+  operationStatus?: 'pending' | 'success' | 'failed'
+
+  // 深度知识字段（可选，由深化操作填充）
   principle?: string           // 核心原理
   useCases?: string[]          // 使用场景
   examples?: Array<{           // 示例
@@ -198,9 +211,11 @@ Store / Repository / LLM
 |------|------|
 | `currentGraph` | 当前知识图谱 |
 | `selectedNodeId` | 选中的节点 ID |
-| `expandedNodeIds` | 已展开的节点集合 |
-| `loading` | 加载状态 |
-| `loadingNodes` | 正在展开的节点集合 |
+| `expandedNodeIds` | 已扩展的节点集合（骨架完成） |
+| `deepenedNodeIds` | 已深化的节点集合（深度内容完成） |
+| `loading` | 全局加载状态 |
+| `loadingNodes` | 正在扩展的节点集合 |
+| `loadingDeepenNodes` | 正在深化的节点集合 |
 | `error` | 错误信息 |
 | `qaLoadingNodes` | 正在加载 QA 的节点集合 |
 | `qaError` | QA 错误信息 |
@@ -228,6 +243,8 @@ Store / Repository / LLM
 | `activeOperationId` | 当前激活操作 ID |
 | `pendingCount` | 进行中的异步操作数量 |
 | `lastError` | 最近一次操作错误 |
+
+操作类型：`create_graph` | `expand_node` | `deepen_node`
 
 ## 数据流
 
@@ -259,30 +276,68 @@ React Flow 重新渲染图谱
 UI → Service → Store / Repository / LLM
 ```
 
-### 节点展开流程
+### 节点扩展流程（expandOnly：骨架）
 ```
-用户点击节点展开按钮
+用户点击节点"扩展"按钮
     ↓
 GraphNode.onExpand()
     ↓
-OperationService.expandNode(nodeId)
+OperationService.expandNode(nodeId) → expandOnly + 自动深化
+    ├─ expandOnly(nodeId)：骨架获取 + 去重 + 写入节点/边
+    │   ↓
+    │   LLMClient.expandSkeleton() → OpenAI Compatible API
+    │   ↓
+    │   dedupSkeleton() 去重
+    │   ↓
+    │   knowledgeStore.updateGraphById()（mutationType: 'structure'）
+    │
+    └─ deepenOnly(nodeId)：深度内容获取（自动，已深化则跳过）
+        ↓
+        LLMClient.getKnowledgeDeep() + getRelatedKnowledge()
+        ↓
+        knowledgeStore.updateGraphById()（mutationType: 'content'）
+        ↓
+        operationStore 更新为 success / failed
+        ↓
+        React Flow 更新节点状态
+```
+
+### 节点深化流程（deepenOnly：内容）
+```
+用户点击节点"深化"按钮（或由扩展自动触发）
     ↓
-更新 operationStore（pending）
+GraphNode.onDeepen()
     ↓
-LLMClient.expandKnowledgeNode() → OpenAI Compatible API
+OperationService.deepenOnly(nodeId, { force? })
     ↓
-normalizers 标准化 + parseKnowledgeResponse() 解析
+LLMClient.getKnowledgeDeep() + getRelatedKnowledge()
     ↓
-knowledgeStore 更新节点与关系
-    ↓
-GraphRepository.save() 持久化
+knowledgeStore.updateGraphById()（mutationType: 'content'）
     ↓
 operationStore 更新为 success / failed
     ↓
 React Flow 更新节点状态
+
+注：force=true 时跳过"已深化"拦截，支持重新生成（带 confirm 确认）
 ```
 
 ## 技术选型理由
+
+### 服务层 API（operationService.ts）
+| 函数 | 说明 | mutationType |
+|------|------|-------------|
+| `createGraph(topic)` | 创建新图谱 | structure |
+| `expandOnly(nodeId)` | 只做骨架：关联节点标题 → 去重 → 写入节点/边 | structure |
+| `deepenOnly(nodeId, { force? })` | 只做深度内容：principle/examples 等 + 关联节点描述 | content |
+| `expandNode(nodeId)` | 组合入口：expandOnly → deepenOnly | structure + content |
+| `resumePendingOperations()` | 恢复中断的操作（页面加载时） | meta |
+
+### CAS 并发控制
+节点有两个独立的操作锁，防止并发冲突：
+- `activeExpandOpId`：扩展操作锁，`expandOnly` 开始时写入，完成/失败时清除
+- `activeDeepenOpId`：深化操作锁，`deepenOnly` 开始时写入，完成/失败时清除
+
+`updateGraphById` 通过 `expectedExpandOpId` / `expectedDeepenOpId` 参数进行 CAS 校验，确保旧操作不会覆盖新操作的结果。
 
 | 技术 | 理由 |
 |------|------|

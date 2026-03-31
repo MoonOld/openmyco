@@ -5,14 +5,17 @@ import type {
   LLMKnowledgeResponse,
   LLMKnowledgeResponseV2,
 } from '@/types'
-import { parseKnowledgeResponse, parseKnowledgeResponseV2, parseSkeletonResponse, parseDeepResponse, extractJSON } from './parsers'
+import { parseKnowledgeResponse, parseKnowledgeResponseV2, parseSkeletonResponse, parseDeepResponse, parseQAResponse, extractJSON } from './parsers'
+import type { QAResponse } from './parsers'
 import {
   KNOWLEDGE_GRAPH_PROMPT,
   KNOWLEDGE_SKELETON_PROMPT as KNOWLEDGE_SKELETON_PROMPT_FN,
   KNOWLEDGE_DEEP_PROMPT,
   RELATED_KNOWLEDGE_PROMPT,
   NODE_EXPAND_PROMPT,
+  NODE_EXPAND_SKELETON_PROMPT,
   NODE_EXPLAIN_PROMPT,
+  QA_PROMPT,
 } from './prompts'
 import pLimit from 'p-limit'
 
@@ -416,6 +419,30 @@ export class LLMClient {
   /**
    * Get explanation for a node
    */
+
+  /**
+   * 展开节点获取骨架（使用专用 expand prompt，传入已有节点标题减少重复）
+   */
+  async expandSkeleton(
+    nodeTitle: string,
+    nodeDescription: string,
+    adjacentNodes: string[],
+    existingNodeTitles?: string[]
+  ): Promise<{
+    node: { title: string; briefDescription: string; type: string; difficulty: number }
+    relatedTitles: { title: string; type: string; relation: string }[]
+    subTopics?: Array<{ title: string }>
+  } | null> {
+    const messages: ChatMessage[] = [
+      { role: 'system', content: '你是一个知识图谱助手。快速返回 JSON 格式的知识骨架。' },
+      { role: 'user', content: NODE_EXPAND_SKELETON_PROMPT(nodeTitle, nodeDescription, adjacentNodes, existingNodeTitles) },
+    ]
+
+    const response = await this.chat(messages)
+    if (!response) return null
+
+    return parseSkeletonResponse(response)
+  }
   async explainNode(nodeTitle: string, nodeDescription: string): Promise<string | null> {
     const messages: ChatMessage[] = [
       {
@@ -429,6 +456,33 @@ export class LLMClient {
     ]
 
     return await this.chat(messages)
+  }
+
+  /**
+   * Ask a question about a knowledge node
+   */
+  async askQuestion(
+    nodeTitle: string,
+    nodeDescription: string,
+    question: string,
+    qaHistory?: Array<{ question: string; answer: string }>,
+    principleSummary?: string
+  ): Promise<QAResponse | null> {
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: '你是一个知识学习助手。请返回有效的 JSON 格式。',
+      },
+      {
+        role: 'user',
+        content: QA_PROMPT(nodeTitle, nodeDescription, question, qaHistory, principleSummary),
+      },
+    ]
+
+    const response = await this.chat(messages)
+    if (!response) return null
+
+    return parseQAResponse(response)
   }
 
   /**

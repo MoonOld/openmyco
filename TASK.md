@@ -20,10 +20,10 @@
 
 | PR | 内容 | 复杂度 | 状态 |
 |----|------|--------|------|
-| **PR-1** | NodeDetailPanel Tab 化重构 + 展示已有深维度内容 | 中 | 进行中 |
-| **PR-2** | keyTerms 字段 + LLM + 展示 | 低 | 待开始 |
-| **PR-3** | subTopics 数据模型 + LLM + 展示 | 中 | 待开始 |
-| **PR-4** | Q&A 数据模型 + LLM + UI（四选一动作） | 高 | 待开始 |
+| **PR-1** | NodeDetailPanel Tab 化重构 + 展示已有深维度内容 | 中 | ✅ 已合并 |
+| **PR-2** | keyTerms 字段 + LLM + 展示 | 低 | ✅ 已合并 |
+| **PR-3** | subTopics 数据模型 + LLM + 展示 | 中 | ✅ 已合并 |
+| **PR-4** | Q&A 数据模型 + LLM + UI（四选一动作） | 高 | ✅ 已完成 |
 
 ---
 
@@ -51,13 +51,13 @@
 - 概览 Tab 始终有内容（至少有 description）
 
 ### 验收标准
-- [ ] NodeDetailPanel 有 4 个 Tab，可切换
-- [ ] 每个 Tab 正确展示对应深维度字段
-- [ ] 空状态有友好提示
-- [ ] 关系导航功能不受影响
-- [ ] `npx tsc -p tsconfig.app.json --noEmit` 通过
-- [ ] `npm run lint` 通过
-- [ ] `npm run test:run` 通过
+- [x] NodeDetailPanel 有 4 个 Tab，可切换
+- [x] 每个 Tab 正确展示对应深维度字段
+- [x] 空状态有友好提示
+- [x] 关系导航功能不受影响
+- [x] `npx tsc -p tsconfig.app.json --noEmit` 通过
+- [x] `npm run lint` 通过
+- [x] `npm run test:run` 通过
 
 ---
 
@@ -86,11 +86,11 @@ keyTerms?: Array<{
 ```
 
 ### 验收标准
-- [ ] KnowledgeNode 类型包含 keyTerms
-- [ ] parseDeepResponse 正确解析 keyTerms
-- [ ] NodeDetailPanel 概览 Tab 展示 keyTerms
-- [ ] 空状态友好提示
-- [ ] lint + typecheck + test 全通过
+- [x] KnowledgeNode 类型包含 keyTerms
+- [x] parseDeepResponse 正确解析 keyTerms
+- [x] NodeDetailPanel 概览 Tab 展示 keyTerms
+- [x] 空状态友好提示
+- [x] lint + typecheck + test 全通过
 
 ---
 
@@ -120,10 +120,10 @@ subTopics?: Array<{
 ```
 
 ### 验收标准
-- [ ] KnowledgeNode 类型包含 subTopics
-- [ ] LLM 可返回子话题数据
-- [ ] NodeDetailPanel 展示子话题
-- [ ] lint + typecheck + test 全通过
+- [x] KnowledgeNode 类型包含 subTopics
+- [x] LLM 可返回子话题数据
+- [x] NodeDetailPanel 展示子话题
+- [x] lint + typecheck + test 全通过
 
 ---
 
@@ -135,40 +135,98 @@ subTopics?: Array<{
 ### 改动文件
 | 文件 | 改动 |
 |------|------|
-| `src/types/knowledge.ts` | 新增 QAType, KnowledgeQA |
-| `src/lib/storage/repositories.ts` | 新增 QA 存储方法 |
-| `src/lib/llm/prompts.ts` | 新增 QA_PROMPT |
-| `src/lib/llm/parsers.ts` | 新增 parseQAResponse |
+| `src/types/knowledge.ts` | 新增 QAActionType, MergeableField, KnowledgeQA 类型 |
+| `src/lib/llm/prompts.ts` | 新增 QA_PROMPT（含上下文：节点描述、原理摘要、历史问答） |
+| `src/lib/llm/parsers.ts` | 新增 parseQAResponse + QAResponse 类型 |
 | `src/lib/llm/client.ts` | 新增 askQuestion 方法 |
-| `src/stores/knowledgeStore.ts` | 新增 QA 相关 actions |
-| `src/components/graph/NodeDetailPanel.tsx` | 新增 Q&A Tab + 四选一 UI |
-| `src/lib/llm/__tests__/parsers.test.ts` | 新增 QA 解析测试 |
+| `src/stores/knowledgeStore.ts` | 新增 qaLoadingNodes, qaError 状态 + askQuestion, executeQAAction actions |
+| `src/components/graph/QAPanel.tsx` | **新增** — Q&A 面板组件（提问输入 + 待处理/历史列表 + 四选一按钮） |
+| `src/components/graph/NodeDetailPanel.tsx` | 新增问答 Tab，引入 QAPanel |
+| `src/lib/llm/__tests__/parsers.test.ts` | 新增 parseQAResponse 测试 |
+| `src/stores/__tests__/knowledgeStore.test.ts` | 新增 askQuestion + executeQAAction 测试 |
 
 ### Q&A 数据模型
 ```typescript
+type QAActionType = 'save_only' | 'merge_to_field' | 'generate_subtopic' | 'upgrade_to_node'
+type MergeableField = 'principle' | 'useCases' | 'bestPractices' | 'commonMistakes'
+
 interface KnowledgeQA {
   id: string
-  nodeId: string
-  graphId: string
   question: string
   answer: string
-  action: 'save_only' | 'merge_to_field' | 'generate_subtopic' | 'upgrade_to_node'
-  actionResult?: string  // 执行动作后的结果描述
+  action: QAActionType
+  actionResult?: string    // 执行动作后的结果描述
+  mergedField?: MergeableField  // merge_to_field 时记录目标字段
   createdAt: Date
 }
 ```
+> 注意：QA 存储在 `KnowledgeNode.qas` 数组中，跟随节点持久化，无需独立的存储层。
 
 ### 四选一动作 UI
-- 用户提问后，LLM 返回回答
-- 显示回答 + 4 个动作按钮
-- 选择动作后执行对应操作
+- 用户提问后，LLM 返回回答 + 建议动作（suggestedAction + suggestedField）
+- 显示回答 + 建议标签 + 4 个动作按钮
+- 选择 `merge_to_field` 时，展开二级按钮选择目标字段（principle/useCases/bestPractices/commonMistakes）
+- 选择动作后执行对应操作，QA 移入「历史问答」
 
 ### 验收标准
-- [ ] Q&A 数据模型完整
-- [ ] 用户可输入问题并获取回答
-- [ ] 四选一动作全部可执行
-- [ ] "升级为新节点"在图谱中创建新节点
-- [ ] lint + typecheck + test 全通过
+
+#### 数据模型与类型
+- [x] `QAActionType` 和 `MergeableField` 类型定义完整且被正确导出
+- [x] `KnowledgeQA` 接口包含所有字段（id, question, answer, action, actionResult?, mergedField?, createdAt）
+- [x] `KnowledgeNode.qas` 为可选数组字段，类型为 `KnowledgeQA[]`
+- [x] persist merge 正确处理 `qas[].createdAt` 的 Date 反序列化
+
+#### LLM Prompt 与解析
+- [x] `QA_PROMPT` 包含节点标题、描述、原理摘要、历史问答上下文
+- [x] `QA_PROMPT` 要求 LLM 返回 JSON（answer, suggestedAction, suggestedField?）
+- [x] `parseQAResponse` 正确解析有效响应，answer 为空时返回 null
+- [x] `parseQAResponse` 将无效 suggestedAction 降级为 `save_only`
+- [x] `parseQAResponse` 仅在 suggestedAction 为 `merge_to_field` 时保留 suggestedField
+- [x] `parseQAResponse` 支持 markdown code fence 包裹的响应
+
+#### LLM Client
+- [x] `LLMClient.askQuestion` 正确组装 system + user message 并调用 `parseQAResponse`
+- [x] `askQuestion` 接受 qaHistory 和 principleSummary 参数传递给 prompt
+
+#### Store Actions — askQuestion
+- [x] API Key 未配置时设置 `qaError` 并提前返回
+- [x] 加载期间 `qaLoadingNodes` 正确添加/移除节点 ID
+- [x] LLM 返回有效响应后，QA 记录追加到 `node.qas` 数组
+- [x] QA 记录包含正确的 question、answer、suggestedAction、suggestedField
+- [x] 操作完成后持久化到 IndexedDB
+- [x] 节点不存在时不调用 LLM
+
+#### Store Actions — executeQAAction
+- [x] `save_only`：标记 `actionResult = 'saved'`，不修改节点其他字段
+- [x] `merge_to_field` + field：合并回答到对应字段（principle 追加文本，其他追加到数组）
+- [x] `merge_to_field` 无 field 参数时提前返回，不修改数据
+- [x] `generate_subtopic`：在 `node.subTopics` 数组追加新子话题（title 截取自 question，description 截取自 answer）
+- [x] `upgrade_to_node`：创建新 KnowledgeNode + KnowledgeEdge（type=related, weight=0.7），添加到图谱
+- [x] 每个动作都标记 QA 的 `actionResult`
+- [x] 操作完成后持久化到 IndexedDB
+
+#### UI — QAPanel 组件
+- [x] 提问输入框（Textarea）+ 提交按钮（Enter 快捷键提交）
+- [x] 加载中状态显示"思考中..."，禁用输入和按钮
+- [x] 错误状态显示 qaError 信息
+- [x] 待处理 QA 列表：显示 question、answer、建议动作标签、4 个动作按钮
+- [x] `merge_to_field` 点击后展开二级字段选择按钮（principle/useCases/bestPractices/commonMistakes）
+- [x] 历史问答列表：可折叠（details/summary），显示 question、answer、actionResult
+- [x] 空状态提示："对这个知识点提问，深入探索"
+
+#### UI — NodeDetailPanel 集成
+- [x] Tab 栏新增"问答"Tab（MessageCircle 图标）
+- [x] 问答 Tab 使用 QAPanel 组件，传入正确的 nodeId
+
+#### 测试覆盖
+- [x] `parseQAResponse` 测试：有效响应、save_only、merge_to_field、无效 action 降级、空 answer 返回 null、code fence 包裹、非 JSON 内容
+- [x] `askQuestion` store 测试：成功追加 QA、API Key 缺失报错、节点不存在不调用 LLM
+- [x] `executeQAAction` store 测试：save_only、merge_to_field（principle + useCases）、缺 field 提前返回、generate_subtopic、upgrade_to_node
+
+#### 质量门禁
+- [x] `npx tsc -p tsconfig.app.json --noEmit` 通过
+- [x] `npm run lint` 通过
+- [x] `npm run test:run` 通过
 
 ---
 
@@ -219,3 +277,14 @@ npm run test:run
 - 关联知识应该聚焦于**直接相关、可操作的具体概念**，而非笼统的上位概念
 - 过于抽象的父概念（如"密码学""数学""计算机科学"）只会让图谱膨胀，增加认知负担
 - Prompt 中应引导 LLM 倾向于输出**细粒度的具体依赖**，而非宽泛的学科分类
+
+### 展开节点时应避免创建重复节点
+
+> **场景**：当节点 A 展开后产生了节点 B 和 C。然后用户展开节点 B，LLM 又返回了节点 A 和 C 作为关联节点。此时图中会出现两个 A 和两个 C，造成重复。
+
+**核心问题**：当前 `expandNode` 的 Skeleton 阶段虽然传入了 `adjacentNodes`（已有相邻节点列表）并在 prompt 中要求「避免重复」，但 LLM 仍然可能返回标题相同或高度相似的节点。
+
+**解决方向**：
+1. **Prompt 级别**：在 Skeleton prompt 中更强调「以下节点已存在于图谱中，不要重复生成」，并列出**所有**已有节点（不只是相邻节点）
+2. **后处理去重**：在 parser 或 normalizer 层，将 Skeleton 返回的节点标题与图谱中已有节点做匹配（精确匹配 + 模糊匹配），命中的跳过创建新节点，改为复用已有节点 ID 并只添加新的边关系
+3. **数据流**：`expandNode` → Skeleton → 拿到 relatedTitles → 与 `graph.nodes` 比对 → 重复的用已有 ID，新的创建新节点 → 写入 store

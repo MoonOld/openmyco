@@ -8,6 +8,7 @@ import {
   extractJSON,
   parseDeepResponse,
   parseSkeletonResponse,
+  parseQAResponse,
 } from '../parsers'
 import type { RelationType, LLMKnowledgeResponse } from '@/types'
 
@@ -724,5 +725,94 @@ describe('parseDeepResponse - subTopics whitelist (B-lite)', () => {
     const result = parseDeepResponse(content, ['State Hooks', 'Effect Hooks'])
     expect(result).not.toBeNull()
     expect(result?.subTopics).toBeUndefined()
+  })
+})
+
+describe('parseQAResponse', () => {
+  it('should parse valid response with all fields', () => {
+    const content = JSON.stringify({
+      answer: 'React 使用 Virtual DOM 来优化渲染性能。',
+      suggestedAction: 'merge_to_field',
+      suggestedField: 'principle',
+    })
+
+    const result = parseQAResponse(content)
+    expect(result).not.toBeNull()
+    expect(result!.answer).toBe('React 使用 Virtual DOM 来优化渲染性能。')
+    expect(result!.suggestedAction).toBe('merge_to_field')
+    expect(result!.suggestedField).toBe('principle')
+  })
+
+  it('should parse valid response with save_only action', () => {
+    const content = JSON.stringify({
+      answer: '这是一个通用问题的回答。',
+      suggestedAction: 'save_only',
+    })
+
+    const result = parseQAResponse(content)
+    expect(result).not.toBeNull()
+    expect(result!.suggestedAction).toBe('save_only')
+    expect(result!.suggestedField).toBeUndefined()
+  })
+
+  it('should downgrade invalid suggestedAction to save_only', () => {
+    const content = JSON.stringify({
+      answer: 'Some answer',
+      suggestedAction: 'invalid_action',
+    })
+
+    const result = parseQAResponse(content)
+    expect(result).not.toBeNull()
+    expect(result!.suggestedAction).toBe('save_only')
+  })
+
+  it('should return null when answer is missing', () => {
+    const content = JSON.stringify({
+      suggestedAction: 'save_only',
+    })
+
+    const result = parseQAResponse(content)
+    expect(result).toBeNull()
+  })
+
+  it('should return null when answer is empty string', () => {
+    const content = JSON.stringify({
+      answer: '   ',
+      suggestedAction: 'save_only',
+    })
+
+    const result = parseQAResponse(content)
+    expect(result).toBeNull()
+  })
+
+  it('should ignore suggestedField when action is not merge_to_field', () => {
+    const content = JSON.stringify({
+      answer: 'Some answer',
+      suggestedAction: 'save_only',
+      suggestedField: 'principle',
+    })
+
+    const result = parseQAResponse(content)
+    expect(result).not.toBeNull()
+    expect(result!.suggestedAction).toBe('save_only')
+    expect(result!.suggestedField).toBeUndefined()
+  })
+
+  it('should parse response wrapped in code fence', () => {
+    const content = '```json\n' + JSON.stringify({
+      answer: 'Fenced answer',
+      suggestedAction: 'merge_to_field',
+      suggestedField: 'useCases',
+    }) + '\n```'
+
+    const result = parseQAResponse(content)
+    expect(result).not.toBeNull()
+    expect(result!.answer).toBe('Fenced answer')
+    expect(result!.suggestedField).toBe('useCases')
+  })
+
+  it('should return null for non-JSON content', () => {
+    const result = parseQAResponse('This is just plain text without any JSON')
+    expect(result).toBeNull()
   })
 })

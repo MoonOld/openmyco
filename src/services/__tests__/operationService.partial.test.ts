@@ -14,15 +14,15 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import type { KnowledgeGraph, KnowledgeNode } from '@/types'
 
 // 使用 vi.hoisted 创建可配置的 mock 函数
-const { mockGetKnowledgeSkeleton, mockGetKnowledgeDeep, mockGetRelatedKnowledge } = vi.hoisted(() => ({
-  mockGetKnowledgeSkeleton: vi.fn(),
+const { mockExpandSkeleton, mockGetKnowledgeDeep, mockGetRelatedKnowledge } = vi.hoisted(() => ({
+  mockExpandSkeleton: vi.fn(),
   mockGetKnowledgeDeep: vi.fn(),
   mockGetRelatedKnowledge: vi.fn(),
 }))
 
 vi.mock('@/lib/llm', () => ({
   createLLMClient: vi.fn().mockReturnValue({
-    getKnowledgeSkeleton: mockGetKnowledgeSkeleton,
+    expandSkeleton: mockExpandSkeleton,
     getKnowledgeDeep: mockGetKnowledgeDeep,
     getRelatedKnowledge: mockGetRelatedKnowledge,
   }),
@@ -107,7 +107,7 @@ describe('operationService - Promise.allSettled 部分成功', () => {
     useKnowledgeStore.setState({ updateGraphById: updateGraphByIdSpy } as any)
 
     // 默认 skeleton mock（每个测试可覆盖）
-    mockGetKnowledgeSkeleton.mockResolvedValue({
+    mockExpandSkeleton.mockResolvedValue({
       node: { title: '测试', briefDescription: '简介' },
       relatedTitles: [
         { title: '子节点A', type: 'concept', relation: 'related' },

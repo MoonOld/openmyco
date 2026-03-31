@@ -216,7 +216,8 @@ export const KNOWLEDGE_GRAPH_PROMPT = (topic: string) => `请为知识点"${topi
 export const NODE_EXPAND_SKELETON_PROMPT = (
   currentNodeTitle: string,
   currentNodeDescription: string,
-  adjacentNodes: string[]
+  adjacentNodes: string[],
+  existingNodeTitles?: string[]
 ) => `请快速扩展知识节点"${currentNodeTitle}"。
 
 当前节点信息：
@@ -225,6 +226,11 @@ export const NODE_EXPAND_SKELETON_PROMPT = (
 
 已有的相邻节点（请避免重复）：
 ${adjacentNodes.map((n) => `- ${n}`).join('\n')}
+${existingNodeTitles && existingNodeTitles.length > 0 ? `
+
+**已有节点（严禁重复）**：以下节点已存在于图谱中，不要在任何分类中包含它们：
+${existingNodeTitles.slice(0, 50).map(t => `- ${t}`).join('\n')}
+` : ''}
 
 **要求**：快速返回骨架，只包含标题。
 
@@ -303,6 +309,58 @@ export const NODE_EXPLAIN_PROMPT = (nodeTitle: string, nodeDescription: string) 
 4. 常见的应用场景
 
 请用通俗易懂的语言解释。`
+
+/**
+ * Prompt for Q&A on a knowledge node
+ */
+export const QA_PROMPT = (
+  nodeTitle: string,
+  nodeDescription: string,
+  question: string,
+  qaHistory?: Array<{ question: string; answer: string }>,
+  principleSummary?: string
+) => {
+  const historySection = qaHistory && qaHistory.length > 0
+    ? `\n**已回答的问题（请勿重复回答）**：\n${qaHistory.map(qa => `- Q: ${qa.question}`).join('\n')}\n`
+    : ''
+  const principleSection = principleSummary
+    ? `\n**核心原理摘要**：${principleSummary}\n`
+    : ''
+
+  return `你是知识学习助手。用户正在学习"${nodeTitle}"这个知识点，请回答用户的提问。
+
+**知识点**：${nodeTitle}
+**描述**：${nodeDescription}${principleSection}${historySection}
+**用户提问**：${question}
+
+请回答问题，并建议一个最适合将回答内容沉淀到知识图谱的动作。
+
+返回 JSON 格式：
+{
+  "answer": "你的回答（详细、准确、有帮助）",
+  "suggestedAction": "save_only|merge_to_field|generate_subtopic|upgrade_to_node",
+  "suggestedField": "principle|useCases|bestPractices|commonMistakes"
+}
+
+**suggestedAction 说明**：
+- \`save_only\`：仅保存问答记录，不修改节点内容（适合一般性问题）
+- \`merge_to_field\`：将回答合并到节点的某个字段中（适合回答补充了原理/场景/实践等知识），此时必须提供 suggestedField
+- \`generate_subtopic\`：将问答生成一个新的子话题（适合回答涉及了该知识点的细分方向）
+- \`upgrade_to_node\`：将问答升级为一个独立的知识节点（适合回答涉及了一个独立的、值得深入学习的知识点）
+
+**suggestedField 说明**（仅在 suggestedAction 为 merge_to_field 时有效）：
+- \`principle\`：合并到核心原理
+- \`useCases\`：合并到应用场景
+- \`bestPractices\`：合并到最佳实践
+- \`commonMistakes\`：合并到常见错误
+
+**要求**：
+- answer 必须具体、准确，有教育价值
+- 根据回答内容选择最合适的 suggestedAction
+- 不要重复已有问答中的内容
+
+请回答"${question}"。`
+}
 
 /**
  * Get relation type display name in Chinese

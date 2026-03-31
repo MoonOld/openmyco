@@ -96,6 +96,13 @@ export function storedToRuntime(
       ...node,
       createdAt: new Date(node.createdAt),
       updatedAt: new Date(node.updatedAt),
+      // Convert qas[].createdAt strings back to Date
+      ...(node.qas ? {
+        qas: node.qas.map((qa) => ({
+          ...qa,
+          createdAt: new Date(qa.createdAt),
+        }))
+      } : {}),
     })
   })
 
@@ -170,6 +177,13 @@ export async function importGraphFromJson(json: string): Promise<ImportResult> {
       ...node,
       createdAt: new Date(node.createdAt),
       updatedAt: new Date(node.updatedAt),
+      // Convert qas[].createdAt strings back to Date
+      ...(node.qas ? {
+        qas: node.qas.map((qa) => ({
+          ...qa,
+          createdAt: new Date(qa.createdAt),
+        }))
+      } : {}),
     }))
     graph.createdAt = new Date(graph.createdAt)
     graph.updatedAt = new Date(graph.updatedAt)

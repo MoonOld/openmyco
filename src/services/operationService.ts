@@ -15,8 +15,9 @@ import { useKnowledgeStore } from '@/stores/knowledgeStore'
 import { useOperationStore } from '@/stores/operationStore'
 import { useSettingsStore } from '@/stores/settingsStore'
 import { createLLMClient } from '@/lib/llm'
+import { dedupSkeleton, canonicalizeTitle } from '@/lib/llm/dedup'
 import { generateId } from '@/lib/utils'
-import type { KnowledgeNode, KnowledgeEdge } from '@/types'
+import type { KnowledgeNode } from '@/types'
 import { normalizeLLMResponse } from '@/lib/normalizers/llmGraphNormalizer'
 import { dispatchGraphUpdateEvent } from '@/types/events'
 import type { UpdateGraphResult } from '@/stores/knowledgeStore'
@@ -291,6 +292,8 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
   })
 
   let skeletonNodeMap: Map<string, string> | undefined
+  let skeletonNodes: KnowledgeNode[] | undefined
+  let newNodeIds: Set<string> | undefined
 
   try {
     const { llmConfig } = useSettingsStore.getState()
@@ -301,40 +304,39 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     const client = createLLMClient(llmConfig)
 
     // ========== Step 1: 获取骨架 ==========
-    const skeleton = await client.getKnowledgeSkeleton(node.title)
+    // 获取相邻节点标题和全图节点标题
+    const adjacentNodeIds = new Set(
+      graph.edges
+        .filter(e => e.source === nodeId || e.target === nodeId)
+        .map(e => e.source === nodeId ? e.target : e.source)
+    )
+    const adjacentTitles = Array.from(adjacentNodeIds)
+      .map(id => graph.nodes.get(id)?.title)
+      .filter(Boolean) as string[]
+
+    const existingNodeTitles = Array.from(graph.nodes.values()).map(n => n.title)
+
+    const skeleton = await client.expandSkeleton(
+      node.title, node.description || '', adjacentTitles, existingNodeTitles
+    )
     if (!skeleton) {
       throw new Error(`无法获取 "${node.title}" 的知识骨架`)
     }
 
-    // 创建骨架节点
-    const skeletonNodes: KnowledgeNode[] = skeleton.relatedTitles.map((r) => ({
-      id: generateId(),
-      title: r.title,
-      description: '',
-      type: r.type as KnowledgeNode['type'],
-      difficulty: 3,
-      expanded: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      operationStatus: 'pending' as const,
-    }))
+    // 去重处理
+    const dedupResult = dedupSkeleton(skeleton.relatedTitles, nodeId, graph.nodes, graph.edges)
+    skeletonNodes = dedupResult.newNodes
+    newNodeIds = new Set(skeletonNodes.map(n => n.id))
+    const skeletonEdges = dedupResult.newEdges
+    skeletonNodeMap = dedupResult.nodeTitleMap
 
-    // 记录骨架节点映射
-    skeletonNodeMap = new Map<string, string>()
-    skeleton.relatedTitles.forEach((r, i) => {
-      skeletonNodeMap!.set(r.title, skeletonNodes[i]!.id)
-    })
+    if (dedupResult.duplicatesFound > 0) {
+      console.log(`[OperationService] Dedup: reused ${dedupResult.duplicatesFound} existing nodes`)
+    }
 
-    // 创建骨架边
-    const skeletonEdges: KnowledgeEdge[] = skeleton.relatedTitles.map((r) => {
-      const skeletonNodeId = skeletonNodeMap!.get(r.title)!
-      return {
-        id: generateId(),
-        source: r.relation === 'prerequisite' ? skeletonNodeId : nodeId,
-        target: r.relation === 'prerequisite' ? nodeId : skeletonNodeId,
-        type: r.relation as KnowledgeEdge['type'],
-        weight: 0.7,
-      }
+    // 为新节点标记 operationStatus
+    skeletonNodes.forEach(n => {
+      n.operationStatus = 'pending' as const
     })
 
     // 定向写入骨架（第一阶段）- 结构变更（带 CAS）
@@ -351,6 +353,19 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     // ========== Step 2: 并行获取深度信息（支持部分成功）==========
     const relatedTitles = skeleton.relatedTitles.map((r) => r.title)
     const subTopicTitles = skeleton.subTopics?.map((st) => st.title)
+
+    // 检查操作是否仍然有效
+    const currentOp = useOperationStore.getState().getOperation(operationId)
+    if (!currentOp || currentOp.status !== 'pending') {
+      console.log('[OperationService] 操作已被取消或替换，放弃深度获取')
+      return {
+        success: false,
+        operationId,
+        graphId,
+        error: '操作已取消',
+        wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
+      }
+    }
 
     const [deepInfoResult, relatedInfoResult] = await Promise.allSettled([
       client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription, relatedTitles, subTopicTitles),
@@ -379,8 +394,8 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     }
 
     // 并发安全校验：检查操作是否仍然有效
-    const currentOp = useOperationStore.getState().getOperation(operationId)
-    if (!currentOp || currentOp.status !== 'pending') {
+    const opBeforeUpdate = useOperationStore.getState().getOperation(operationId)
+    if (!opBeforeUpdate || opBeforeUpdate.status !== 'pending') {
       console.log('[OperationService] 操作已被取消或替换，放弃更新')
       return {
         success: false,
@@ -416,7 +431,7 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     const batchNodeUpdates: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }> = []
     if (relatedInfo) {
       relatedInfo.forEach((info) => {
-        const skeletonNodeId = skeletonNodeMap!.get(info.title)
+        const skeletonNodeId = skeletonNodeMap!.get(canonicalizeTitle(info.title))
         if (skeletonNodeId) {
           batchNodeUpdates.push({
             nodeId: skeletonNodeId,
@@ -432,17 +447,21 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     }
 
     // deepInfo 失败但 relatedInfo 成功 → 骨架节点有内容
-    // relatedInfo 失败但 deepInfo 成功 → 骨架节点标记 failed
+    // relatedInfo 失败但 deepInfo 成功 → 新骨架节点标记 failed（去重复用的不受影响）
     if (!relatedInfo && skeletonNodeMap) {
       const relatedErrorMsg = relatedInfoError instanceof Error ? relatedInfoError.message : '关联知识获取失败'
       skeletonNodeMap.forEach((skeletonNodeId) => {
-        batchNodeUpdates.push({
-          nodeId: skeletonNodeId,
-          updates: {
-            operationStatus: 'failed',
-            operationError: relatedErrorMsg,
-          },
-        })
+        // 只标记新创建的骨架节点为 failed，跳过去重复用的节点
+        const isNewNode = newNodeIds?.has(skeletonNodeId)
+        if (isNewNode) {
+          batchNodeUpdates.push({
+            nodeId: skeletonNodeId,
+            updates: {
+              operationStatus: 'failed',
+              operationError: relatedErrorMsg,
+            },
+          })
+        }
       })
     }
 
@@ -483,16 +502,19 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     const errorMessage = error instanceof Error ? error.message : '展开节点时出错'
     const batchFailUpdates: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }> = []
 
-    // 骨架节点也标记为 failed
+    // 骨架节点也标记为 failed（只标记新创建的，跳过去重复用的节点）
     if (skeletonNodeMap) {
       skeletonNodeMap.forEach((skeletonNodeId) => {
-        batchFailUpdates.push({
-          nodeId: skeletonNodeId,
-          updates: {
-            operationStatus: 'failed',
-            operationError: errorMessage,
-          },
-        })
+        const isNewNode = newNodeIds?.has(skeletonNodeId)
+        if (isNewNode) {
+          batchFailUpdates.push({
+            nodeId: skeletonNodeId,
+            updates: {
+              operationStatus: 'failed',
+              operationError: errorMessage,
+            },
+          })
+        }
       })
     }
 

@@ -129,7 +129,26 @@ interface KnowledgeNode {
   }>
   bestPractices?: string[]     // 最佳实践
   commonMistakes?: string[]    // 常见错误
+  keyTerms?: Array<{ term: string; definition: string }>  // 关键术语
+  subTopics?: Array<{ title: string; description: string; keyPoints?: string[] }>  // 子话题
+  qas?: KnowledgeQA[]          // Q&A 问答记录
   tags?: string[]              // 标签（用户自定义）
+}
+```
+
+### KnowledgeQA (问答记录)
+```typescript
+type QAActionType = 'save_only' | 'merge_to_field' | 'generate_subtopic' | 'upgrade_to_node'
+type MergeableField = 'principle' | 'useCases' | 'bestPractices' | 'commonMistakes'
+
+interface KnowledgeQA {
+  id: string
+  question: string
+  answer: string
+  action: QAActionType         // LLM 建议的沉淀动作
+  actionResult?: string        // 执行后的结果标记
+  mergedField?: MergeableField // merge_to_field 时记录合并到哪个字段
+  createdAt: Date
 }
 ```
 
@@ -181,7 +200,10 @@ Store / Repository / LLM
 | `selectedNodeId` | 选中的节点 ID |
 | `expandedNodeIds` | 已展开的节点集合 |
 | `loading` | 加载状态 |
+| `loadingNodes` | 正在展开的节点集合 |
 | `error` | 错误信息 |
+| `qaLoadingNodes` | 正在加载 QA 的节点集合 |
+| `qaError` | QA 错误信息 |
 
 ### settingsStore
 | 状态 | 说明 |

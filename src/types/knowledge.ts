@@ -1,3 +1,17 @@
+// QA action types
+export type QAActionType = 'save_only' | 'merge_to_field' | 'generate_subtopic' | 'upgrade_to_node'
+export type MergeableField = 'principle' | 'useCases' | 'bestPractices' | 'commonMistakes'
+
+export interface KnowledgeQA {
+  id: string
+  question: string
+  answer: string
+  action: QAActionType
+  actionResult?: string
+  mergedField?: MergeableField
+  createdAt: Date
+}
+
 // Operation status for async operations
 export type OperationStatus = 'pending' | 'success' | 'failed'
 
@@ -27,6 +41,8 @@ export interface KnowledgeNode {
     description: string
     keyPoints?: string[]
   }>
+  // Q&A history
+  qas?: KnowledgeQA[]
   // Operation status (for async operations like expand/create)
   operationStatus?: OperationStatus
   operationError?: string

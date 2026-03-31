@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useKnowledgeStore } from '../knowledgeStore'
-import type { KnowledgeNode, KnowledgeGraph } from '@/types'
+import type { KnowledgeNode, KnowledgeGraph, KnowledgeQA } from '@/types'
 
 // Mock GraphRepository for updateGraphById tests
 vi.mock('@/lib/storage', () => {
@@ -50,6 +50,27 @@ vi.mock('@/lib/storage', () => {
 vi.mock('@/types/events', () => ({
   dispatchGraphUpdateEvent: vi.fn(),
   computeStructureSignature: vi.fn(() => 'mock-sig'),
+}))
+
+// Mock settings store
+vi.mock('../settingsStore', () => ({
+  useSettingsStore: {
+    getState: () => ({
+      llmConfig: {
+        apiKey: 'test-api-key',
+        baseURL: 'https://api.test.com',
+        model: 'test-model',
+      },
+    }),
+  },
+}))
+
+// Mock LLM client
+const mockAskQuestion = vi.fn()
+vi.mock('@/lib/llm', () => ({
+  createLLMClient: vi.fn(() => ({
+    askQuestion: mockAskQuestion,
+  })),
 }))
 
 describe('knowledgeStore', () => {
@@ -223,16 +244,86 @@ describe('knowledgeStore', () => {
 
       expect(result.current.currentGraph?.nodes.size).toBe(2)
     })
+
+    it('should skip nodes with duplicate canonical title', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      const existingNode: KnowledgeNode = {
+        id: 'node-1',
+        title: 'Machine Learning',
+        description: 'Existing',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      const nodeMap = new Map<string, KnowledgeNode>()
+      nodeMap.set('node-1', existingNode)
+
+      const mockGraph: KnowledgeGraph = {
+        id: 'graph-1',
+        rootId: 'node-1',
+        nodes: nodeMap,
+        edges: [],
+        name: 'Test Graph',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      const duplicateNode: KnowledgeNode = {
+        id: 'node-dup',
+        title: 'machine learning', // different case, same canonical
+        description: 'Duplicate',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      act(() => {
+        result.current.setCurrentGraph(mockGraph)
+        const { added, skipped } = result.current.addNodes([duplicateNode])
+        expect(added).toHaveLength(0)
+        expect(skipped).toHaveLength(1)
+      })
+
+      expect(result.current.currentGraph?.nodes.size).toBe(1)
+      expect(result.current.currentGraph?.nodes.has('node-1')).toBe(true)
+      expect(result.current.currentGraph?.nodes.has('node-dup')).toBe(false)
+    })
   })
 
   describe('addEdges', () => {
     it('should add edges to graph', () => {
       const { result } = renderHook(() => useKnowledgeStore())
 
+      const node1: KnowledgeNode = {
+        id: 'node-1',
+        title: 'A',
+        description: '',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      const node2: KnowledgeNode = {
+        id: 'node-2',
+        title: 'B',
+        description: '',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      const nodeMap = new Map<string, KnowledgeNode>()
+      nodeMap.set('node-1', node1)
+      nodeMap.set('node-2', node2)
+
       const mockGraph: KnowledgeGraph = {
         id: 'graph-1',
         rootId: 'node-1',
-        nodes: new Map(),
+        nodes: nodeMap,
         edges: [],
         name: 'Test Graph',
         createdAt: new Date(),
@@ -259,10 +350,32 @@ describe('knowledgeStore', () => {
     it('should not add duplicate edges', () => {
       const { result } = renderHook(() => useKnowledgeStore())
 
+      const node1: KnowledgeNode = {
+        id: 'node-1',
+        title: 'A',
+        description: '',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      const node2: KnowledgeNode = {
+        id: 'node-2',
+        title: 'B',
+        description: '',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      const nodeMap = new Map<string, KnowledgeNode>()
+      nodeMap.set('node-1', node1)
+      nodeMap.set('node-2', node2)
+
       const mockGraph: KnowledgeGraph = {
         id: 'graph-1',
         rootId: 'node-1',
-        nodes: new Map(),
+        nodes: nodeMap,
         edges: [],
         name: 'Test Graph',
         createdAt: new Date(),
@@ -285,6 +398,61 @@ describe('knowledgeStore', () => {
       })
 
       expect(result.current.currentGraph?.edges).toHaveLength(1)
+    })
+
+    it('should filter out dangling edges whose source/target nodes do not exist', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      const node1: KnowledgeNode = {
+        id: 'node-1',
+        title: 'A',
+        description: '',
+        type: 'concept',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      const nodeMap = new Map<string, KnowledgeNode>()
+      nodeMap.set('node-1', node1)
+
+      const mockGraph: KnowledgeGraph = {
+        id: 'graph-1',
+        rootId: 'node-1',
+        nodes: nodeMap,
+        edges: [],
+        name: 'Test Graph',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      const edges = [
+        {
+          id: 'edge-good',
+          source: 'node-1',
+          target: 'node-1', // self-loop OK
+          type: 'related' as const,
+        },
+        {
+          id: 'edge-dangling-target',
+          source: 'node-1',
+          target: 'node-nonexistent',
+          type: 'related' as const,
+        },
+        {
+          id: 'edge-dangling-source',
+          source: 'node-nonexistent',
+          target: 'node-1',
+          type: 'related' as const,
+        },
+      ]
+
+      act(() => {
+        result.current.setCurrentGraph(mockGraph)
+        result.current.addEdges(edges)
+      })
+
+      expect(result.current.currentGraph?.edges).toHaveLength(1)
+      expect(result.current.currentGraph?.edges[0].id).toBe('edge-good')
     })
   })
 
@@ -546,7 +714,7 @@ describe('knowledgeStore', () => {
       expect(res.conflict).toBeUndefined()
     })
 
-    it('CAS 失败：目标节点不存在', async () => {
+    it('CAS 跳过：目标节点不存在时不触发 CAS（无锁可校验）', async () => {
       const { result } = renderHook(() => useKnowledgeStore())
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       ;(mockStorage.GraphRepository as any)._storedGraphs.set('graph-1', {
@@ -560,8 +728,10 @@ describe('knowledgeStore', () => {
         expectedOperationId: 'op-123',
       })
 
-      expect(res.success).toBe(false)
-      expect(res.conflict).toBe(true)
+      // CAS 校验需要 rootNode 存在才能比对，节点不存在时跳过 CAS
+      // 操作本身会成功（但不会更新任何节点，因为节点确实不存在）
+      expect(res.success).toBe(true)
+      expect(res.conflict).toBeUndefined()
     })
   })
 
@@ -680,6 +850,267 @@ describe('knowledgeStore', () => {
 
       // But after switch, currentGraph should be graph-2
       expect(result.current.currentGraph?.id).toBe('graph-2')
+    })
+  })
+
+  describe('askQuestion', () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+      mockAskQuestion.mockReset()
+    })
+
+    it('should add QA to node after successful LLM response', async () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      const node: KnowledgeNode = {
+        id: 'node-1',
+        title: 'React',
+        description: 'A JavaScript library',
+        type: 'tool',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      act(() => {
+        result.current.setCurrentGraph({
+          id: 'graph-1',
+          rootId: 'node-1',
+          nodes: new Map([['node-1', node]]),
+          edges: [],
+          name: 'Test Graph',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+      })
+
+      mockAskQuestion.mockResolvedValue({
+        answer: 'React uses Virtual DOM for efficient updates',
+        suggestedAction: 'save_only',
+      })
+
+      await act(async () => {
+        await result.current.askQuestion('node-1', 'How does React render?')
+      })
+
+      const updatedNode = result.current.currentGraph?.nodes.get('node-1')
+      expect(updatedNode?.qas).toHaveLength(1)
+      expect(updatedNode?.qas?.[0].question).toBe('How does React render?')
+      expect(updatedNode?.qas?.[0].answer).toBe('React uses Virtual DOM for efficient updates')
+      expect(updatedNode?.qas?.[0].action).toBe('save_only')
+    })
+
+    it('should set qaError when API key is missing', async () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      const node: KnowledgeNode = {
+        id: 'node-1',
+        title: 'React',
+        description: 'A JavaScript library',
+        type: 'tool',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+
+      act(() => {
+        result.current.setCurrentGraph({
+          id: 'graph-1',
+          rootId: 'node-1',
+          nodes: new Map([['node-1', node]]),
+          edges: [],
+          name: 'Test Graph',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+      })
+
+      // Temporarily override the settings mock to return no API key
+      const settingsModule = await import('../settingsStore')
+      const originalGetState = settingsModule.useSettingsStore.getState
+      settingsModule.useSettingsStore.getState = () => ({
+        llmConfig: { apiKey: '', baseURL: '', model: '' },
+      }) as ReturnType<typeof settingsModule.useSettingsStore.getState>
+
+      await act(async () => {
+        await result.current.askQuestion('node-1', 'test')
+      })
+
+      expect(result.current.qaError).toBe('请先配置 API Key')
+
+      // Restore original mock
+      settingsModule.useSettingsStore.getState = originalGetState
+    })
+
+    it('should not modify graph when node does not exist', async () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      act(() => {
+        result.current.setCurrentGraph({
+          id: 'graph-1',
+          rootId: 'node-1',
+          nodes: new Map(),
+          edges: [],
+          name: 'Test Graph',
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })
+      })
+
+      await act(async () => {
+        await result.current.askQuestion('nonexistent', 'test')
+      })
+
+      expect(mockAskQuestion).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('executeQAAction', () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+    })
+
+    const createGraphWithQA = (qa: Partial<KnowledgeQA> = {}): KnowledgeGraph => {
+      const fullQA: KnowledgeQA = {
+        id: 'qa-1',
+        question: 'What is Virtual DOM?',
+        answer: 'Virtual DOM is a lightweight copy of the real DOM',
+        action: 'save_only',
+        createdAt: new Date(),
+        ...qa,
+      }
+      const node: KnowledgeNode = {
+        id: 'node-1',
+        title: 'React',
+        description: 'A JavaScript library',
+        type: 'tool',
+        expanded: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        qas: [fullQA],
+      }
+      return {
+        id: 'graph-1',
+        rootId: 'node-1',
+        nodes: new Map([['node-1', node]]),
+        edges: [],
+        name: 'Test Graph',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+    }
+
+    it('save_only: should mark QA as saved', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      act(() => {
+        result.current.setCurrentGraph(createGraphWithQA())
+      })
+
+      act(() => {
+        result.current.executeQAAction('node-1', 'qa-1', 'save_only')
+      })
+
+      const qa = result.current.currentGraph?.nodes.get('node-1')?.qas?.[0]
+      expect(qa?.actionResult).toBe('saved')
+    })
+
+    it('merge_to_field: should append answer to principle', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      act(() => {
+        result.current.setCurrentGraph(createGraphWithQA({
+          action: 'merge_to_field',
+        }))
+      })
+
+      act(() => {
+        result.current.executeQAAction('node-1', 'qa-1', 'merge_to_field', 'principle')
+      })
+
+      const node = result.current.currentGraph?.nodes.get('node-1')
+      expect(node?.principle).toContain('Virtual DOM is a lightweight copy of the real DOM')
+      const qa = node?.qas?.[0]
+      expect(qa?.actionResult).toBe('merged_to_principle')
+      expect(qa?.mergedField).toBe('principle')
+    })
+
+    it('merge_to_field: should push answer to array field (useCases)', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      act(() => {
+        result.current.setCurrentGraph(createGraphWithQA({
+          action: 'merge_to_field',
+          answer: 'Building SPAs',
+        }))
+      })
+
+      act(() => {
+        result.current.executeQAAction('node-1', 'qa-1', 'merge_to_field', 'useCases')
+      })
+
+      const node = result.current.currentGraph?.nodes.get('node-1')
+      expect(node?.useCases).toContain('Building SPAs')
+    })
+
+    it('merge_to_field: should return early when field is missing', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      act(() => {
+        result.current.setCurrentGraph(createGraphWithQA())
+      })
+
+      act(() => {
+        result.current.executeQAAction('node-1', 'qa-1', 'merge_to_field')
+      })
+
+      // QA should not be modified since field was not provided
+      const qa = result.current.currentGraph?.nodes.get('node-1')?.qas?.[0]
+      expect(qa?.actionResult).toBeUndefined()
+    })
+
+    it('generate_subtopic: should add a new subTopic', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      act(() => {
+        result.current.setCurrentGraph(createGraphWithQA({
+          action: 'generate_subtopic',
+        }))
+      })
+
+      act(() => {
+        result.current.executeQAAction('node-1', 'qa-1', 'generate_subtopic')
+      })
+
+      const node = result.current.currentGraph?.nodes.get('node-1')
+      expect(node?.subTopics).toHaveLength(1)
+      expect(node?.subTopics?.[0].title).toBeTruthy()
+      const qa = node?.qas?.[0]
+      expect(qa?.actionResult).toBe('generated_subtopic')
+    })
+
+    it('upgrade_to_node: should create a new node and edge', () => {
+      const { result } = renderHook(() => useKnowledgeStore())
+
+      act(() => {
+        result.current.setCurrentGraph(createGraphWithQA({
+          action: 'upgrade_to_node',
+        }))
+      })
+
+      act(() => {
+        result.current.executeQAAction('node-1', 'qa-1', 'upgrade_to_node')
+      })
+
+      const graph = result.current.currentGraph
+      // Should have 2 nodes now
+      expect(graph?.nodes.size).toBe(2)
+      // Should have 1 edge
+      expect(graph?.edges).toHaveLength(1)
+      expect(graph?.edges[0].type).toBe('related')
+      expect(graph?.edges[0].weight).toBe(0.7)
+      const qa = graph?.nodes.get('node-1')?.qas?.[0]
+      expect(qa?.actionResult).toBe('upgraded_to_node')
     })
   })
 })

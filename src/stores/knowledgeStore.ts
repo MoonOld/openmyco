@@ -1,8 +1,9 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { KnowledgeGraph, KnowledgeNode, KnowledgeEdge } from '@/types'
+import type { KnowledgeGraph, KnowledgeNode, KnowledgeEdge, KnowledgeQA, QAActionType, MergeableField } from '@/types'
 import { arrayToNodes, generateId } from '@/lib/utils'
 import { createLLMClient } from '@/lib/llm'
+import { dedupSkeleton, canonicalizeTitle } from '@/lib/llm/dedup'
 import { useSettingsStore } from './settingsStore'
 import { GraphRepository, storedToRuntime } from '@/lib/storage'
 import type { GraphMutationType } from '@/types/events'
@@ -34,19 +35,25 @@ interface KnowledgeState {
   currentGraph: KnowledgeGraph | null
   selectedNodeId: string | null
   expandedNodeIds: Set<string>
+  deepenedNodeIds: Set<string>
   loading: boolean
   loadingNodes: Set<string>  // Nodes currently being expanded
+  loadingDeepenNodes: Set<string>  // Nodes currently being deepened
   error: string | null
   focusMode: boolean  // Whether to show only focused node and neighbors
   focusDepth: number  // How many degrees of neighbors to show (1 = direct neighbors)
+  qaLoadingNodes: Set<string>  // Nodes currently loading QA
+  qaError: string | null
 
   // Actions
   setCurrentGraph: (graph: KnowledgeGraph | null) => void
   selectNode: (nodeId: string | null) => void
   toggleExpand: (nodeId: string) => void
   setExpanded: (nodeId: string, expanded: boolean) => void
+  setDeepened: (nodeId: string, deepened: boolean) => void
+  /** @deprecated Use operationService.expandNode instead — UI 已切换到 operationService */
   expandNode: (nodeId: string) => Promise<void>
-  addNodes: (nodes: KnowledgeNode[]) => void
+  addNodes: (nodes: KnowledgeNode[]) => { added: KnowledgeNode[]; skipped: KnowledgeNode[] }
   addEdges: (edges: KnowledgeEdge[]) => void
   updateNode: (nodeId: string, updates: Partial<KnowledgeNode>) => void
   removeNode: (nodeId: string) => void
@@ -59,6 +66,9 @@ interface KnowledgeState {
   setError: (error: string | null) => void
   setFocusMode: (enabled: boolean) => void
   setFocusDepth: (depth: number) => void
+  setQaError: (error: string | null) => void
+  askQuestion: (nodeId: string, question: string) => Promise<void>
+  executeQAAction: (nodeId: string, qaId: string, action: QAActionType, field?: MergeableField) => void
 
   // 定向更新方法（不依赖 currentGraph）
   updateGraphById: (
@@ -72,10 +82,15 @@ interface KnowledgeState {
       mutationType?: GraphMutationType  // 由调用方决定
       sourceOperationId?: string        // 操作来源追踪
       expectedOperationId?: string      // CAS 校验：节点当前的 activeOperationId 应匹配
+      expectedExpandOpId?: string       // CAS 校验：扩展操作锁
+      expectedDeepenOpId?: string       // CAS 校验：深化操作锁
       nodeUpdates?: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }>  // 批量节点更新
     }
   ) => Promise<UpdateGraphResult>
 }
+
+// per-graph 写队列：同图谱的异步写操作串行化，防止 expand/deepen 交叉覆盖
+const graphWriteLocks = new Map<string, Promise<void>>()
 
 export const useKnowledgeStore = create<KnowledgeState>()(
   persist(
@@ -84,22 +99,42 @@ export const useKnowledgeStore = create<KnowledgeState>()(
       currentGraph: null,
       selectedNodeId: null,
       expandedNodeIds: new Set<string>(),
+      deepenedNodeIds: new Set<string>(),
       loadingNodes: new Set<string>(),
+      loadingDeepenNodes: new Set<string>(),
       loading: false,
       error: null,
       focusMode: true,  // Default to focus mode
       focusDepth: 1,    // Show direct neighbors by default
+      qaLoadingNodes: new Set<string>(),
+      qaError: null,
 
       // Actions
-      setCurrentGraph: (graph) =>
+      setCurrentGraph: (graph) => {
+        // 从图谱节点数据重建 expandedNodeIds / deepenedNodeIds
+        const expandedNodeIds = new Set<string>()
+        const deepenedNodeIds = new Set<string>()
+        if (graph) {
+          graph.nodes.forEach((node) => {
+            if (node.expanded || node.expandStatus === 'success' || node.operationStatus === 'success') {
+              expandedNodeIds.add(node.id)
+            }
+            if (node.deepenStatus === 'success') {
+              deepenedNodeIds.add(node.id)
+            }
+          })
+        }
         set({
           currentGraph: graph,
           selectedNodeId: null,
-          expandedNodeIds: new Set(),
+          expandedNodeIds,
+          deepenedNodeIds,
           // 切换视图时清除 loading 状态（后台操作会继续执行）
           loadingNodes: new Set(),
+          loadingDeepenNodes: new Set(),
           loading: false,
-        }),
+        })
+      },
 
       selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
@@ -139,44 +174,37 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           const client = createLLMClient(llmConfig)
 
           // ========== Step 1: 获取骨架 ==========
-          // 这是第一个请求，获取后立即渲染骨架节点
-          const skeleton = await client.getKnowledgeSkeleton(node.title)
+          // 获取相邻节点标题和全图节点标题
+          const adjacentNodeIds = new Set(
+            graph.edges
+              .filter(e => e.source === nodeId || e.target === nodeId)
+              .map(e => e.source === nodeId ? e.target : e.source)
+          )
+          const adjacentTitles = Array.from(adjacentNodeIds)
+            .map(id => graph.nodes.get(id)?.title)
+            .filter(Boolean) as string[]
+
+          const existingNodeTitles = Array.from(graph.nodes.values()).map(n => n.title)
+
+          // 使用专用 expand prompt（传入已有节点标题减少重复）
+          const skeleton = await client.expandSkeleton(
+            node.title, node.description || '', adjacentTitles, existingNodeTitles
+          )
           if (!skeleton) {
             set({ error: `无法获取 "${node.title}" 的知识骨架` })
             return
           }
 
-          // 立即创建并渲染骨架节点
-          const skeletonNodes: KnowledgeNode[] = skeleton.relatedTitles.map((r) => ({
-            id: generateId(),
-            title: r.title,
-            description: '', // 空描述表示正在加载
-            type: r.type as KnowledgeNode['type'],
-            difficulty: 3,
-            expanded: false,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          }))
+          // 去重处理
+          const { newNodes: skeletonNodes, newEdges: skeletonEdges, nodeTitleMap: skeletonNodeMap, duplicatesFound } =
+            dedupSkeleton(skeleton.relatedTitles, nodeId, graph.nodes, graph.edges)
 
-          // 记录骨架节点 ID，用于后续更新
-          const skeletonNodeMap = new Map<string, string>()
-          skeleton.relatedTitles.forEach((r, i) => {
-            skeletonNodeMap.set(r.title, skeletonNodes[i]!.id)
-          })
+          if (duplicatesFound > 0) {
+            console.log(`[expandNode] Dedup: reused ${duplicatesFound} existing nodes`)
+          }
 
           // 立即添加骨架节点和边 - 用户此时可以看到结构
           get().addNodes(skeletonNodes)
-
-          const skeletonEdges: KnowledgeEdge[] = skeleton.relatedTitles.map((r) => {
-            const skeletonNodeId = skeletonNodeMap.get(r.title)!
-            return {
-              id: generateId(),
-              source: r.relation === 'prerequisite' ? skeletonNodeId : nodeId,
-              target: r.relation === 'prerequisite' ? nodeId : skeletonNodeId,
-              type: r.relation as KnowledgeEdge['type'],
-              weight: 0.7,
-            }
-          })
           get().addEdges(skeletonEdges)
 
           // ========== Step 2: 并行获取深度信息 ==========
@@ -207,11 +235,13 @@ export const useKnowledgeStore = create<KnowledgeState>()(
             })
           }
 
-          // 更新关联节点描述
+          // 更新关联节点描述（对去重复用的节点只补充空字段）
           if (relatedInfo) {
             relatedInfo.forEach((info) => {
-              const skeletonNodeId = skeletonNodeMap.get(info.title)
-              if (skeletonNodeId) {
+              const skeletonNodeId = skeletonNodeMap.get(canonicalizeTitle(info.title))
+              if (!skeletonNodeId) return
+              const existingNode = get().currentGraph?.nodes.get(skeletonNodeId)
+              if (existingNode && !existingNode.description) {
                 get().updateNode(skeletonNodeId, {
                   description: info.description,
                   difficulty: info.difficulty as 1 | 2 | 3 | 4 | 5,
@@ -249,16 +279,47 @@ export const useKnowledgeStore = create<KnowledgeState>()(
         set({ expandedNodeIds: expandedSet })
       },
 
+      setDeepened: (nodeId, deepened) => {
+        const deepenedSet = new Set(get().deepenedNodeIds)
+        if (deepened) {
+          deepenedSet.add(nodeId)
+        } else {
+          deepenedSet.delete(nodeId)
+        }
+        set({ deepenedNodeIds: deepenedSet })
+      },
+
       addNodes: (nodes) => {
         const graph = get().currentGraph
-        if (!graph) return
+        if (!graph) return { added: [] as KnowledgeNode[], skipped: [] as KnowledgeNode[] }
 
+        // 构建 canonical title -> id 映射（最终防线防并发竞态）
+        const existingCanonical = new Map<string, string>()
+        graph.nodes.forEach((node) => {
+          const key = canonicalizeTitle(node.title)
+          if (key) existingCanonical.set(key, node.id)
+        })
+
+        const added: KnowledgeNode[] = []
+        const skipped: KnowledgeNode[] = []
         const newNodes = new Map(graph.nodes)
-        nodes.forEach((node) => newNodes.set(node.id, node))
+        for (const node of nodes) {
+          const canonical = canonicalizeTitle(node.title)
+          if (canonical && existingCanonical.has(canonical)) {
+            console.log(`[addNodes] Dedup barrier: skipped "${node.title}" (existing: "${existingCanonical.get(canonical)}")`)
+            skipped.push(node)
+            continue
+          }
+          newNodes.set(node.id, node)
+          if (canonical) existingCanonical.set(canonical, node.id)
+          added.push(node)
+        }
 
         set({
           currentGraph: { ...graph, nodes: newNodes },
         })
+
+        return { added, skipped }
       },
 
       addEdges: (edges) => {
@@ -272,7 +333,15 @@ export const useKnowledgeStore = create<KnowledgeState>()(
         console.log('[addEdges] Current edges:', graph.edges.length)
 
         const existingEdgeIds = new Set(graph.edges.map((e) => e.id))
-        const newEdges = edges.filter((e) => !existingEdgeIds.has(e.id))
+        const nodeIds = graph.nodes.keys()
+        const nodeIdSet = new Set(Array.from(nodeIds))
+        const validEdges = edges.filter((e) =>
+          nodeIdSet.has(e.source) && nodeIdSet.has(e.target)
+        )
+        if (validEdges.length < edges.length) {
+          console.log(`[addEdges] Filtered ${edges.length - validEdges.length} dangling edges (source/target not in graph)`)
+        }
+        const newEdges = validEdges.filter((e) => !existingEdgeIds.has(e.id))
 
         console.log('[addEdges] New edges to add:', newEdges.length)
 
@@ -324,6 +393,7 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           currentGraph: null,
           selectedNodeId: null,
           expandedNodeIds: new Set(),
+          deepenedNodeIds: new Set(),
         }),
 
       createGraph: (rootNode) => {
@@ -351,7 +421,7 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           createdAt: new Date(),
           updatedAt: new Date(),
         }
-        set({ currentGraph: graph, selectedNodeId: null, expandedNodeIds: new Set() })
+        set({ currentGraph: graph, selectedNodeId: null, expandedNodeIds: new Set(), deepenedNodeIds: new Set() })
       },
 
       isEmptyGraph: () => {
@@ -383,6 +453,176 @@ export const useKnowledgeStore = create<KnowledgeState>()(
       setError: (error) => set({ error }),
       setFocusMode: (enabled) => set({ focusMode: enabled }),
       setFocusDepth: (depth) => set({ focusDepth: depth }),
+      setQaError: (error) => set({ qaError: error }),
+
+      askQuestion: async (nodeId: string, question: string) => {
+        const graph = get().currentGraph
+        if (!graph || !graph.nodes.has(nodeId)) return
+
+        const node = graph.nodes.get(nodeId)!
+
+        // Check API key
+        const { llmConfig } = useSettingsStore.getState()
+        if (!llmConfig.apiKey) {
+          set({ qaError: '请先配置 API Key' })
+          return
+        }
+
+        // Set loading state
+        const qaLoadingNodes = new Set(get().qaLoadingNodes)
+        qaLoadingNodes.add(nodeId)
+        set({ qaLoadingNodes, qaError: null })
+
+        try {
+          const client = createLLMClient(llmConfig)
+
+          // Build QA history summary
+          const qaHistory = node.qas?.map(qa => ({
+            question: qa.question,
+            answer: qa.answer.substring(0, 50),
+          }))
+
+          const response = await client.askQuestion(
+            node.title,
+            node.description,
+            question,
+            qaHistory,
+            node.principle?.substring(0, 100)
+          )
+
+          if (!response) {
+            set({ qaError: 'LLM 返回无效响应' })
+            return
+          }
+
+          // Create QA record
+          const qa: KnowledgeQA = {
+            id: generateId(),
+            question,
+            answer: response.answer,
+            action: response.suggestedAction,
+            mergedField: response.suggestedField,
+            createdAt: new Date(),
+          }
+
+          // Append QA to node
+          const updatedQAs = [...(node.qas || []), qa]
+          get().updateNode(nodeId, { qas: updatedQAs })
+
+          // Save to storage
+          const updatedGraph = get().currentGraph
+          if (updatedGraph) {
+            await GraphRepository.save(updatedGraph)
+          }
+        } catch (error) {
+          console.error('Failed to ask question:', error)
+          set({ qaError: error instanceof Error ? error.message : '提问时出错' })
+        } finally {
+          const qaLoadingNodes = new Set(get().qaLoadingNodes)
+          qaLoadingNodes.delete(nodeId)
+          set({ qaLoadingNodes })
+        }
+      },
+
+      executeQAAction: (nodeId: string, qaId: string, action: QAActionType, field?: MergeableField) => {
+        const graph = get().currentGraph
+        if (!graph || !graph.nodes.has(nodeId)) return
+
+        const node = graph.nodes.get(nodeId)!
+        const qa = node.qas?.find(q => q.id === qaId)
+        if (!qa) return
+
+        switch (action) {
+          case 'save_only': {
+            // Just mark the QA as processed
+            const updatedQAs = node.qas!.map(q =>
+              q.id === qaId ? { ...q, actionResult: 'saved' } : q
+            )
+            get().updateNode(nodeId, { qas: updatedQAs })
+            break
+          }
+
+          case 'merge_to_field': {
+            if (!field) return
+            const updatedQAs = node.qas!.map(q =>
+              q.id === qaId ? { ...q, actionResult: `merged_to_${field}`, mergedField: field } : q
+            )
+
+            const nodeUpdates: Partial<KnowledgeNode> = { qas: updatedQAs }
+            if (field === 'principle') {
+              const existing = node.principle || ''
+              nodeUpdates.principle = existing + (existing ? '\n\n' : '') + `【来自问答】${qa.answer}`
+            } else if (field === 'useCases' || field === 'bestPractices' || field === 'commonMistakes') {
+              const existing = node[field] || []
+              nodeUpdates[field] = [...existing, qa.answer]
+            }
+
+            get().updateNode(nodeId, nodeUpdates)
+            break
+          }
+
+          case 'generate_subtopic': {
+            const updatedQAs = node.qas!.map(q =>
+              q.id === qaId ? { ...q, actionResult: 'generated_subtopic' } : q
+            )
+
+            const title = qa.question.length > 20 ? qa.question.substring(0, 20) + '...' : qa.question
+            const description = qa.answer.length > 100 ? qa.answer.substring(0, 100) + '...' : qa.answer
+            const newSubTopic = { title, description }
+
+            get().updateNode(nodeId, {
+              qas: updatedQAs,
+              subTopics: [...(node.subTopics || []), newSubTopic],
+            })
+            break
+          }
+
+          case 'upgrade_to_node': {
+            const updatedQAs = node.qas!.map(q =>
+              q.id === qaId ? { ...q, actionResult: 'upgraded_to_node' } : q
+            )
+
+            const newNodeId = generateId()
+            const title = qa.question.length > 30 ? qa.question.substring(0, 30) + '...' : qa.question
+            const newNode: KnowledgeNode = {
+              id: newNodeId,
+              title,
+              description: qa.answer,
+              type: 'concept',
+              expanded: false,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            }
+
+            const newEdge: KnowledgeEdge = {
+              id: generateId(),
+              source: nodeId,
+              target: newNodeId,
+              type: 'related',
+              weight: 0.7,
+            }
+
+            get().updateNode(nodeId, { qas: updatedQAs })
+            const { skipped } = get().addNodes([newNode])
+            if (skipped.length > 0) {
+              // 节点被去重屏障跳过，更新 actionResult
+              const finalQAs = node.qas!.map(q =>
+                q.id === qaId ? { ...q, actionResult: 'skipped_duplicate' } : q
+              )
+              get().updateNode(nodeId, { qas: finalQAs })
+            } else {
+              get().addEdges([newEdge])
+            }
+            break
+          }
+        }
+
+        // Save to storage
+        const updatedGraph = get().currentGraph
+        if (updatedGraph) {
+          GraphRepository.save(updatedGraph)
+        }
+      },
 
       /**
        * 定向更新图谱（不依赖 currentGraph）
@@ -390,9 +630,14 @@ export const useKnowledgeStore = create<KnowledgeState>()(
        *
        * CAS 机制：若 expectedOperationId 存在，校验目标节点的 activeOperationId 是否匹配。
        * 这可以防止旧的异步操作覆盖新操作的结果。
+       *
+       * 并发安全：同一图谱的写操作通过 per-graph 队列串行化，避免交叉覆盖。
        */
       updateGraphById: async (graphId, updates) => {
-        try {
+        // per-graph 写队列：同图谱的写操作串行化，防止交叉覆盖
+        const prev = graphWriteLocks.get(graphId) ?? Promise.resolve()
+        const doWrite = async (): Promise<UpdateGraphResult> => {
+          try {
           // 从 IndexedDB 加载目标图谱
           const stored = await GraphRepository.getById(graphId)
           if (!stored) {
@@ -406,18 +651,9 @@ export const useKnowledgeStore = create<KnowledgeState>()(
 
           const graph = storedToRuntime(stored)
 
-          // CAS 校验：检查 activeOperationId 是否匹配
-          if (updates.expectedOperationId) {
-            const rootNode = graph.nodes.get(updates.rootNodeId)
-            if (!rootNode) {
-              return {
-                success: false,
-                isCurrentGraph: false,
-                graphName: '',
-                error: 'CAS 校验失败：目标节点不存在',
-                conflict: true,
-              }
-            }
+          // CAS 校验：检查 activeOperationId 是否匹配（兼容旧锁 + 新扩展锁 + 新深化锁）
+          const rootNode = graph.nodes.get(updates.rootNodeId)
+          if (updates.expectedOperationId && rootNode) {
             if (rootNode.activeOperationId !== updates.expectedOperationId) {
               return {
                 success: false,
@@ -428,12 +664,34 @@ export const useKnowledgeStore = create<KnowledgeState>()(
               }
             }
           }
+          if (updates.expectedExpandOpId && rootNode) {
+            if (rootNode.activeExpandOpId !== updates.expectedExpandOpId) {
+              return {
+                success: false,
+                isCurrentGraph: false,
+                graphName: '',
+                error: 'CAS 校验失败：扩展操作已被替换',
+                conflict: true,
+              }
+            }
+          }
+          if (updates.expectedDeepenOpId && rootNode) {
+            if (rootNode.activeDeepenOpId !== updates.expectedDeepenOpId) {
+              return {
+                success: false,
+                isCurrentGraph: false,
+                graphName: '',
+                error: 'CAS 校验失败：深化操作已被替换',
+                conflict: true,
+              }
+            }
+          }
 
           // 更新根节点
-          const rootNode = graph.nodes.get(updates.rootNodeId)
-          if (rootNode) {
+          const existingRootNode = rootNode ?? graph.nodes.get(updates.rootNodeId)
+          if (existingRootNode) {
             graph.nodes.set(updates.rootNodeId, {
-              ...rootNode,
+              ...existingRootNode,
               ...updates.rootNodeUpdates,
               updatedAt: new Date(),
             })
@@ -453,19 +711,37 @@ export const useKnowledgeStore = create<KnowledgeState>()(
             }
           }
 
-          // 添加新节点
+          // 添加新节点（含 canonical 去重防线）
           if (updates.newNodes) {
+            const canonicalMap = new Map<string, string>()
+            graph.nodes.forEach((n) => {
+              const k = canonicalizeTitle(n.title)
+              if (k) canonicalMap.set(k, n.id)
+            })
             updates.newNodes.forEach((node) => {
+              const canonical = canonicalizeTitle(node.title)
+              if (canonical && canonicalMap.has(canonical)) {
+                console.log(`[updateGraphById] Dedup: skipped "${node.title}" (existing: "${canonicalMap.get(canonical)}")`)
+                return
+              }
               graph.nodes.set(node.id, node)
+              if (canonical) canonicalMap.set(canonical, node.id)
             })
           }
 
-          // 添加新边
+          // 添加新边（含悬空边过滤）
           if (updates.newEdges) {
-            const existingEdgeIds = new Set(graph.edges.map((e) => e.id))
+            const nodeIdSet = new Set(Array.from(graph.nodes.keys()))
+            const existingEdgeKeys = new Set(graph.edges.map((e) => `${e.source}->${e.target}:${e.type}`))
             updates.newEdges.forEach((edge) => {
-              if (!existingEdgeIds.has(edge.id)) {
+              if (!nodeIdSet.has(edge.source) || !nodeIdSet.has(edge.target)) {
+                console.log(`[updateGraphById] Skipped dangling edge: ${edge.source} -> ${edge.target}`)
+                return
+              }
+              const edgeKey = `${edge.source}->${edge.target}:${edge.type}`
+              if (!existingEdgeKeys.has(edgeKey)) {
                 graph.edges.push(edge)
+                existingEdgeKeys.add(edgeKey)
               }
             })
           }
@@ -516,6 +792,12 @@ export const useKnowledgeStore = create<KnowledgeState>()(
             error: error instanceof Error ? error.message : '更新图谱失败',
           }
         }
+        }
+
+        // 将 doWrite 链接到 per-graph 队列，并返回结果
+        const next = prev.then(() => doWrite(), () => doWrite())
+        graphWriteLocks.set(graphId, next.then(() => {}, () => {}))
+        return next
       },
     }),
     {
@@ -528,7 +810,9 @@ export const useKnowledgeStore = create<KnowledgeState>()(
             }
           : null,
         expandedNodeIds: Array.from(state.expandedNodeIds),
+        deepenedNodeIds: Array.from(state.deepenedNodeIds),
         loadingNodes: Array.from(state.loadingNodes),
+        loadingDeepenNodes: Array.from(state.loadingDeepenNodes),
       }),
       merge: (persistedState: unknown, currentState: KnowledgeState) => {
         const state = persistedState as {
@@ -538,7 +822,9 @@ export const useKnowledgeStore = create<KnowledgeState>()(
             updatedAt?: string
           }
           expandedNodeIds?: string[]
+          deepenedNodeIds?: string[]
           loadingNodes?: string[]
+          loadingDeepenNodes?: string[]
         }
 
         const result: Partial<KnowledgeState> = {}
@@ -549,6 +835,13 @@ export const useKnowledgeStore = create<KnowledgeState>()(
             ...node,
             createdAt: new Date(node.createdAt),
             updatedAt: new Date(node.updatedAt),
+            // Convert qas[].createdAt strings back to Date
+            ...(node.qas ? {
+              qas: node.qas.map((qa) => ({
+                ...qa,
+                createdAt: new Date(qa.createdAt),
+              }))
+            } : {}),
           }))
           result.currentGraph = {
             ...state.currentGraph,
@@ -567,9 +860,51 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           ? new Set(state.expandedNodeIds)
           : new Set()
 
+        result.deepenedNodeIds = state.deepenedNodeIds
+          ? new Set(state.deepenedNodeIds)
+          : new Set()
+
         result.loadingNodes = state.loadingNodes
           ? new Set(state.loadingNodes)
           : new Set()
+
+        result.loadingDeepenNodes = state.loadingDeepenNodes
+          ? new Set(state.loadingDeepenNodes)
+          : new Set()
+
+        // Migration: 旧 operationStatus → expandStatus
+        if (result.currentGraph) {
+          const migratedNodes = new Map<string, KnowledgeNode>()
+          result.currentGraph.nodes.forEach((node) => {
+            if (node.operationStatus && !node.expandStatus) {
+              // 旧节点迁移：operationStatus → expandStatus
+              migratedNodes.set(node.id, {
+                ...node,
+                expandStatus: node.operationStatus,
+                expandError: node.operationError,
+                activeExpandOpId: node.activeOperationId,
+                // 如果 expanded=true 且 operationStatus=success，也标记 deepenStatus=success
+                ...(node.expanded && node.operationStatus === 'success' && !node.deepenStatus && {
+                  deepenStatus: 'success' as const,
+                }),
+              })
+            } else {
+              migratedNodes.set(node.id, node)
+            }
+          })
+          result.currentGraph = { ...result.currentGraph, nodes: migratedNodes }
+
+          // 迁移 expandedNodeIds 中有 expandStatus=success 的节点也加入 deepenedNodeIds
+          const expandedSet = result.expandedNodeIds
+          if (expandedSet) {
+            expandedSet.forEach((nodeId) => {
+              const node = migratedNodes.get(nodeId)
+              if (node?.deepenStatus === 'success' && result.deepenedNodeIds) {
+                result.deepenedNodeIds.add(nodeId)
+              }
+            })
+          }
+        }
 
         return { ...currentState, ...result }
       },

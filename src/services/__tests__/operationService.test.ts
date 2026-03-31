@@ -235,7 +235,7 @@ describe('operationService - 核心逻辑测试', () => {
   })
 
   describe('Test 4: 并发安全 - loadingNodes 状态', () => {
-    it('loadingNodes 中的节点应该被拒绝', async () => {
+    it('loadingNodes 中的节点应该被拒绝（expandOnly 检查）', async () => {
       const node1 = createMockNode('node-1', '测试节点', { expanded: false })
       const graph = createMockGraph('graph-1', '测试图谱', [node1])
       useKnowledgeStore.setState({
@@ -243,17 +243,17 @@ describe('operationService - 核心逻辑测试', () => {
         loadingNodes: new Set(['node-1']),
       })
 
-      const { expandNode } = await import('../operationService')
-      const result = await expandNode('node-1')
+      const { expandOnly } = await import('../operationService')
+      const result = await expandOnly('node-1')
 
       expect(result.success).toBe(false)
-      expect(result.error).toBe('节点正在加载中')
+      expect(result.error).toBe('节点正在扩展中')
     })
   })
 
   describe('Test 5: 已展开节点检查', () => {
     it('已展开节点（非失败）应该被拒绝', async () => {
-      const node1 = createMockNode('node-1', '测试节点', { expanded: true, operationStatus: 'success' })
+      const node1 = createMockNode('node-1', '测试节点', { expanded: true, expandStatus: 'success' })
       const graph = createMockGraph('graph-1', '测试图谱', [node1])
       useKnowledgeStore.setState({
         currentGraph: graph,
@@ -261,18 +261,18 @@ describe('operationService - 核心逻辑测试', () => {
         loadingNodes: new Set(),
       })
 
-      const { expandNode } = await import('../operationService')
-      const result = await expandNode('node-1')
+      const { expandOnly } = await import('../operationService')
+      const result = await expandOnly('node-1')
 
       expect(result.success).toBe(false)
-      expect(result.error).toBe('节点已展开')
+      expect(result.error).toBe('节点已扩展')
     })
 
     it('失败节点应该允许重试', async () => {
       const node1 = createMockNode('node-1', '测试节点', {
         expanded: false,
-        operationStatus: 'failed',
-        operationError: '之前的错误'
+        expandStatus: 'failed',
+        expandError: '之前的错误'
       })
       const graph = createMockGraph('graph-1', '测试图谱', [node1])
       useKnowledgeStore.setState({
@@ -284,7 +284,7 @@ describe('operationService - 核心逻辑测试', () => {
       // Mock 必要的依赖
       vi.mock('@/lib/llm', () => ({
         createLLMClient: vi.fn().mockReturnValue({
-          getKnowledgeSkeleton: vi.fn().mockResolvedValue({
+          expandSkeleton: vi.fn().mockResolvedValue({
             node: { title: '测试', briefDescription: '简介' },
             relatedTitles: [],
           }),
@@ -293,20 +293,20 @@ describe('operationService - 核心逻辑测试', () => {
         }),
       }))
 
-      const { expandNode } = await import('../operationService')
-      // 失败节点可以重试（不会因为"已展开"被拒绝）
-      // 由于 mock 问题，这里只验证不会被"节点已展开"拒绝
-      const result = await expandNode('node-1')
+      const { expandOnly } = await import('../operationService')
+      // 失败节点可以重试（不会因为"已扩展"被拒绝）
+      // 由于 mock 问题，这里只验证不会被"节点已扩展"拒绝
+      const result = await expandOnly('node-1')
 
       // 可能会成功（如果 mock 正确）或失败（其他原因）
-      // 但不应该是"节点已展开"
+      // 但不应该是"节点已扩展"
       if (!result.success) {
-        expect(result.error).not.toBe('节点已展开')
+        expect(result.error).not.toBe('节点已扩展')
       }
     })
   })
 
-  describe('Test 6: expandNode - finally 清理 loadingNodes', () => {
+  describe('Test 6: expandOnly - finally 清理 loadingNodes', () => {
     it('无论成功失败，loadingNodes 都应被清理', async () => {
       const node1 = createMockNode('node-1', '测试节点', { expanded: false })
       const graph = createMockGraph('graph-1', '测试图谱', [node1])
@@ -319,12 +319,12 @@ describe('operationService - 核心逻辑测试', () => {
       // Mock LLM to throw
       vi.doMock('@/lib/llm', () => ({
         createLLMClient: vi.fn().mockReturnValue({
-          getKnowledgeSkeleton: vi.fn().mockRejectedValue(new Error('LLM error')),
+          expandSkeleton: vi.fn().mockRejectedValue(new Error('LLM error')),
         }),
       }))
 
-      const { expandNode } = await import('../operationService')
-      await expandNode('node-1')
+      const { expandOnly } = await import('../operationService')
+      await expandOnly('node-1')
 
       // loadingNodes should be empty after finally
       expect(useKnowledgeStore.getState().loadingNodes.has('node-1')).toBe(false)
@@ -350,8 +350,8 @@ describe('operationService - 核心逻辑测试', () => {
 
     it('应将 pending 节点标记为 failed', async () => {
       const mockGraph = createMockGraph('graph-1', 'Test', [
-        createMockNode('node-1', 'Root', { operationStatus: 'pending' }),
-        createMockNode('node-2', 'Child', { operationStatus: 'success' }),
+        createMockNode('node-1', 'Root', { expandStatus: 'pending' }),
+        createMockNode('node-2', 'Child', { expandStatus: 'success' }),
       ])
 
       const saveFn = vi.fn().mockResolvedValue(undefined)
@@ -378,8 +378,8 @@ describe('operationService - 核心逻辑测试', () => {
       expect(updateGraphByIdSpy).toHaveBeenCalledWith('graph-1', expect.objectContaining({
         rootNodeId: 'node-1',
         rootNodeUpdates: expect.objectContaining({
-          operationStatus: 'failed',
-          activeOperationId: undefined,
+          expandStatus: 'failed',
+          expandError: '操作中断，请点击重试',
         }),
       }))
 

@@ -1,4 +1,4 @@
-import type { LLMKnowledgeResponse, LLMKnowledgeResponseV2, KnowledgeNode, RelationType } from '@/types'
+import type { LLMKnowledgeResponse, LLMKnowledgeResponseV2, KnowledgeNode, RelationType, QAActionType, MergeableField } from '@/types'
 import { generateId } from '@/lib/utils'
 
 /**
@@ -601,6 +601,56 @@ export function parseDeepResponse(content: string, subTopicTitles?: string[]): {
     }
   } catch (error) {
     console.error('Failed to parse deep response:', error)
+    return null
+  }
+}
+
+// ==================== QA Response Parser ====================
+
+const VALID_QA_ACTIONS: QAActionType[] = ['save_only', 'merge_to_field', 'generate_subtopic', 'upgrade_to_node']
+const VALID_MERGE_FIELDS: MergeableField[] = ['principle', 'useCases', 'bestPractices', 'commonMistakes']
+
+export interface QAResponse {
+  answer: string
+  suggestedAction: QAActionType
+  suggestedField?: MergeableField
+}
+
+/**
+ * Parse QA response from LLM
+ */
+export function parseQAResponse(content: string): QAResponse | null {
+  try {
+    const jsonStr = extractJSON(content)
+    if (!jsonStr) return null
+
+    const data = JSON.parse(jsonStr)
+
+    // Validate answer
+    if (!data.answer || typeof data.answer !== 'string' || data.answer.trim() === '') {
+      return null
+    }
+
+    // Validate suggestedAction (fallback to save_only)
+    let suggestedAction: QAActionType = 'save_only'
+    if (data.suggestedAction && VALID_QA_ACTIONS.includes(data.suggestedAction)) {
+      suggestedAction = data.suggestedAction
+    }
+
+    // Validate suggestedField (only for merge_to_field)
+    let suggestedField: MergeableField | undefined
+    if (suggestedAction === 'merge_to_field' && data.suggestedField) {
+      if (VALID_MERGE_FIELDS.includes(data.suggestedField)) {
+        suggestedField = data.suggestedField
+      }
+    }
+
+    return {
+      answer: data.answer.trim(),
+      suggestedAction,
+      suggestedField,
+    }
+  } catch {
     return null
   }
 }

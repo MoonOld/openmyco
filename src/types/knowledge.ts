@@ -1,3 +1,17 @@
+// QA action types
+export type QAActionType = 'save_only' | 'merge_to_field' | 'generate_subtopic' | 'upgrade_to_node'
+export type MergeableField = 'principle' | 'useCases' | 'bestPractices' | 'commonMistakes'
+
+export interface KnowledgeQA {
+  id: string
+  question: string
+  answer: string
+  action: QAActionType
+  actionResult?: string
+  mergedField?: MergeableField
+  createdAt: Date
+}
+
 // Operation status for async operations
 export type OperationStatus = 'pending' | 'success' | 'failed'
 
@@ -27,10 +41,24 @@ export interface KnowledgeNode {
     description: string
     keyPoints?: string[]
   }>
-  // Operation status (for async operations like expand/create)
+  // Q&A history
+  qas?: KnowledgeQA[]
+
+  // Expand operation status (structure: skeleton → dedup → nodes/edges)
+  expandStatus?: OperationStatus
+  expandError?: string
+  activeExpandOpId?: string
+
+  // Deepen operation status (content: deep info + related descriptions)
+  deepenStatus?: OperationStatus
+  deepenError?: string
+  activeDeepenOpId?: string
+
+  /** @deprecated Use expandStatus + deepenStatus instead */
   operationStatus?: OperationStatus
+  /** @deprecated Use expandError + deepenError instead */
   operationError?: string
-  // CAS concurrency control: the operationId currently "owning" this node
+  /** @deprecated Use activeExpandOpId + activeDeepenOpId instead */
   activeOperationId?: string
 }
 

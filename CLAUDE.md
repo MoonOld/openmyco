@@ -84,7 +84,8 @@ project/
 ### 核心模块
 - **lib/llm/** - LLM API 调用、Prompt 模板、响应解析
 - **lib/storage/** - IndexedDB 封装 (Dexie.js)
-- **stores/** - knowledgeStore, settingsStore, uiStore
+- **services/operationService.ts** - 操作管理（创建图谱、扩展、深化），依赖方向：UI → Service → Store
+- **stores/** - knowledgeStore, settingsStore, uiStore, operationStore
 - **components/graph/** - React Flow 图可视化组件
 
 ### TypeScript Configuration

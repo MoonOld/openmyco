@@ -118,7 +118,20 @@ export const useMyFeatureStore = create<MyFeatureState>((set) => ({
 1. 在 `src/lib/llm/client.ts` 添加新方法
 2. 在 `src/lib/llm/prompts.ts` 添加 prompt 模板
 3. 在 `src/lib/llm/parsers.ts` 添加响应解析器
-4. 编写测试验证
+4. 在 `src/services/operationService.ts` 添加操作入口（如需新操作类型，同步更新 `operationStore.ts` 的 `OperationType`）
+5. 编写测试验证
+
+### 3.1 扩展/深化双状态模型
+节点有两个独立的操作状态：
+- `expandStatus`：扩展操作（骨架获取 + 去重 + 写入节点/边），mutationType 为 `'structure'`
+- `deepenStatus`：深化操作（深度内容 + 关联描述），mutationType 为 `'content'`
+
+CAS 并发控制通过 `activeExpandOpId` / `activeDeepenOpId` 实现，两个操作互不干扰。
+
+服务层 API：
+- `expandOnly(nodeId)` — 只做骨架
+- `deepenOnly(nodeId, { force? })` — 只做内容，`force=true` 时跳过"已深化"拦截
+- `expandNode(nodeId)` — 组合入口：expandOnly → deepenOnly
 
 ### 4. 添加测试
 ```typescript

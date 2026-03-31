@@ -1,9 +1,9 @@
 /**
- * operationService - Promise.allSettled 部分成功测试
+ * operationService - deepenOnly Promise.allSettled 部分成功测试
  *
  * 测试重点：
- * 1. deepInfo 成功 + relatedInfo 失败 → root success，骨架 failed
- * 2. deepInfo 失败 + relatedInfo 成功 → 骨架 success，root 无描述
+ * 1. deepInfo 成功 + relatedInfo 失败 → root success（部分成功）
+ * 2. deepInfo 失败 + relatedInfo 成功 → root success（部分成功，无 deep 内容）
  * 3. 两个都失败 → 全部 failed
  */
 
@@ -14,18 +14,28 @@ import { useSettingsStore } from '@/stores/settingsStore'
 import type { KnowledgeGraph, KnowledgeNode } from '@/types'
 
 // 使用 vi.hoisted 创建可配置的 mock 函数
-const { mockGetKnowledgeSkeleton, mockGetKnowledgeDeep, mockGetRelatedKnowledge } = vi.hoisted(() => ({
-  mockGetKnowledgeSkeleton: vi.fn(),
+const { mockExpandSkeleton, mockGetKnowledgeDeep, mockGetRelatedKnowledge } = vi.hoisted(() => ({
+  mockExpandSkeleton: vi.fn(),
   mockGetKnowledgeDeep: vi.fn(),
   mockGetRelatedKnowledge: vi.fn(),
 }))
 
 vi.mock('@/lib/llm', () => ({
   createLLMClient: vi.fn().mockReturnValue({
-    getKnowledgeSkeleton: mockGetKnowledgeSkeleton,
+    expandSkeleton: mockExpandSkeleton,
     getKnowledgeDeep: mockGetKnowledgeDeep,
     getRelatedKnowledge: mockGetRelatedKnowledge,
   }),
+}))
+
+vi.mock('@/lib/llm/dedup', () => ({
+  dedupSkeleton: vi.fn().mockReturnValue({
+    newNodes: [],
+    newEdges: [],
+    nodeTitleMap: new Map(),
+    duplicatesFound: 0,
+  }),
+  canonicalizeTitle: vi.fn((t: string) => t?.toLowerCase()),
 }))
 
 // Helper to create mock node
@@ -33,7 +43,7 @@ function createMockNode(id: string, title: string, overrides: Partial<KnowledgeN
   return {
     id,
     title,
-    description: '',
+    description: '测试描述',
     type: 'concept',
     expanded: false,
     createdAt: new Date(),
@@ -75,21 +85,23 @@ const findCallByMutationType = (
   return undefined
 }
 
-describe('operationService - Promise.allSettled 部分成功', () => {
+describe('operationService - deepenOnly Promise.allSettled 部分成功', () => {
   let updateGraphByIdSpy: ReturnType<typeof vi.fn>
   let origUpdate: typeof useKnowledgeStore.getState extends () => { updateGraphById: infer T } ? T : never
 
   beforeEach(async () => {
     vi.clearAllMocks()
 
-    // 设置 store 状态
-    const node1 = createMockNode('node-1', '测试节点', { expanded: false })
+    // 设置 store 状态：节点已有描述（deepenOnly 的前置条件）
+    const node1 = createMockNode('node-1', '测试节点', { expanded: false, description: '基础描述' })
     const graph = createMockGraph('graph-1', '测试图谱', [node1])
     useKnowledgeStore.setState({
       currentGraph: graph,
       selectedNodeId: null,
       expandedNodeIds: new Set(),
+      deepenedNodeIds: new Set(),
       loadingNodes: new Set(),
+      loadingDeepenNodes: new Set(),
     })
     useOperationStore.setState({ operations: new Map() })
     useSettingsStore.setState({
@@ -105,14 +117,6 @@ describe('operationService - Promise.allSettled 部分成功', () => {
     origUpdate = useKnowledgeStore.getState().updateGraphById
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     useKnowledgeStore.setState({ updateGraphById: updateGraphByIdSpy } as any)
-
-    // 默认 skeleton mock（每个测试可覆盖）
-    mockGetKnowledgeSkeleton.mockResolvedValue({
-      node: { title: '测试', briefDescription: '简介' },
-      relatedTitles: [
-        { title: '子节点A', type: 'concept', relation: 'related' },
-      ],
-    })
   })
 
   afterEach(() => {
@@ -120,15 +124,15 @@ describe('operationService - Promise.allSettled 部分成功', () => {
     useKnowledgeStore.setState({ updateGraphById: origUpdate } as any)
   })
 
-  it('deepInfo 成功 + relatedInfo 失败 → root success, 骨架节点 failed', async () => {
+  it('deepInfo 成功 + relatedInfo 失败 → root deepenStatus=success, 有描述', async () => {
     mockGetKnowledgeDeep.mockResolvedValue({
       description: '深度描述',
       estimatedTime: 30,
     })
     mockGetRelatedKnowledge.mockRejectedValue(new Error('关联 API 失败'))
 
-    const { expandNode } = await import('../operationService')
-    const result = await expandNode('node-1')
+    const { deepenOnly } = await import('../operationService')
+    const result = await deepenOnly('node-1')
 
     expect(result.success).toBe(true)
 
@@ -136,46 +140,43 @@ describe('operationService - Promise.allSettled 部分成功', () => {
     const contentCall = findCallByMutationType(updateGraphByIdSpy, 'content')
     expect(contentCall).toBeDefined()
 
-    // root 节点状态为 success
-    expect(contentCall!.rootNodeUpdates.operationStatus).toBe('success')
+    // root 节点 deepenStatus 为 success，且有描述
+    expect(contentCall!.rootNodeUpdates.deepenStatus).toBe('success')
     expect(contentCall!.rootNodeUpdates.description).toBe('深度描述')
 
-    // 骨架节点标记为 failed
-    expect(contentCall!.nodeUpdates).toHaveLength(1)
-    expect(contentCall!.nodeUpdates![0].updates.operationStatus).toBe('failed')
+    // relatedInfo 失败，没有 nodeUpdates
+    expect(contentCall!.nodeUpdates).toHaveLength(0)
   })
 
-  it('deepInfo 失败 + relatedInfo 成功 → 骨架节点 success, root 无描述但 success', async () => {
+  it('deepInfo 失败 + relatedInfo 成功 → root deepenStatus=success（仅 partial）', async () => {
     mockGetKnowledgeDeep.mockRejectedValue(new Error('深度 API 失败'))
     mockGetRelatedKnowledge.mockResolvedValue([
       { title: '子节点A', description: '子节点描述', difficulty: 3, type: 'concept' },
     ])
 
-    const { expandNode } = await import('../operationService')
-    const result = await expandNode('node-1')
+    const { deepenOnly } = await import('../operationService')
+    const result = await deepenOnly('node-1')
 
+    // deepenOnly 使用 Promise.allSettled，一个成功就够了
     expect(result.success).toBe(true)
 
     // 找到最终的 content 写入调用
     const contentCall = findCallByMutationType(updateGraphByIdSpy, 'content')
     expect(contentCall).toBeDefined()
 
-    // root 节点状态为 success（无 description）
-    expect(contentCall!.rootNodeUpdates.operationStatus).toBe('success')
-    expect(contentCall!.rootNodeUpdates.description).toBeUndefined()
+    // root 节点 deepenStatus 为 success
+    expect(contentCall!.rootNodeUpdates.deepenStatus).toBe('success')
 
-    // 骨架节点有内容且 success
-    expect(contentCall!.nodeUpdates).toHaveLength(1)
-    expect(contentCall!.nodeUpdates![0].updates.operationStatus).toBe('success')
-    expect(contentCall!.nodeUpdates![0].updates.description).toBe('子节点描述')
+    // relatedInfo 成功但子节点不在图中（因为图中只有 node-1），所以 nodeUpdates 为空
+    // （findNodeIdByCanonicalTitle 找不到匹配的节点）
   })
 
-  it('两个都失败 → 全部 failed', async () => {
+  it('两个都失败 → deepenOnly failed', async () => {
     mockGetKnowledgeDeep.mockRejectedValue(new Error('深度 API 失败'))
     mockGetRelatedKnowledge.mockRejectedValue(new Error('关联 API 失败'))
 
-    const { expandNode } = await import('../operationService')
-    const result = await expandNode('node-1')
+    const { deepenOnly } = await import('../operationService')
+    const result = await deepenOnly('node-1')
 
     expect(result.success).toBe(false)
 
@@ -183,11 +184,7 @@ describe('operationService - Promise.allSettled 部分成功', () => {
     const metaCall = findCallByMutationType(updateGraphByIdSpy, 'meta')
     expect(metaCall).toBeDefined()
 
-    // root 节点 failed
-    expect(metaCall!.rootNodeUpdates.operationStatus).toBe('failed')
-
-    // 骨架节点也 failed
-    expect(metaCall!.nodeUpdates).toHaveLength(1)
-    expect(metaCall!.nodeUpdates![0].updates.operationStatus).toBe('failed')
+    // root 节点 deepenStatus 为 failed
+    expect(metaCall!.rootNodeUpdates.deepenStatus).toBe('failed')
   })
 })

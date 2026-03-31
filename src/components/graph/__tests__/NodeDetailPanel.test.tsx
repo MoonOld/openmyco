@@ -6,6 +6,9 @@ import type { KnowledgeNode, KnowledgeGraph } from '@/types'
 // Mock the knowledge store
 const mockSelectNode = vi.fn()
 const mockSetFocusMode = vi.fn()
+const mockAskQuestion = vi.fn()
+const mockExecuteQAAction = vi.fn()
+
 
 let mockCurrentGraph: KnowledgeGraph | null = null
 let mockSelectedNodeId: string | null = null
@@ -16,6 +19,11 @@ vi.mock('@/stores', () => ({
     selectedNodeId: mockSelectedNodeId,
     selectNode: mockSelectNode,
     setFocusMode: mockSetFocusMode,
+    qaLoadingNodes: new Set<string>(),
+    qaError: null as string | null,
+    askQuestion: mockAskQuestion,
+    executeQAAction: mockExecuteQAAction,
+    setQaError: vi.fn(),
   }),
 }))
 
@@ -122,19 +130,19 @@ describe('NodeDetailPanel', () => {
     it('should switch to principle tab and show empty state', () => {
       render(<NodeDetailPanel />)
       fireEvent.click(screen.getByRole('tab', { name: /原理/ }))
-      expect(screen.getByText('暂无原理说明，展开节点后自动获取')).toBeInTheDocument()
+      expect(screen.getByText('暂无深化信息，点击节点上的深化按钮获取详细内容')).toBeInTheDocument()
     })
 
     it('should switch to examples tab and show empty state', () => {
       render(<NodeDetailPanel />)
       fireEvent.click(screen.getByRole('tab', { name: /示例/ }))
-      expect(screen.getByText('暂无示例，展开节点后自动获取')).toBeInTheDocument()
+      expect(screen.getByText('暂无深化信息，点击节点上的深化按钮获取详细内容')).toBeInTheDocument()
     })
 
     it('should switch to practices tab and show empty state', () => {
       render(<NodeDetailPanel />)
       fireEvent.click(screen.getByRole('tab', { name: /实践/ }))
-      expect(screen.getByText('暂无实践建议，展开节点后自动获取')).toBeInTheDocument()
+      expect(screen.getByText('暂无实践建议，点击节点上的深化按钮获取')).toBeInTheDocument()
     })
   })
 
@@ -278,13 +286,66 @@ describe('NodeDetailPanel', () => {
     })
   })
 
+  describe('QA tab', () => {
+    it('should render QA tab trigger', () => {
+      const node = createMockNode()
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.getByRole('tab', { name: /问答/ })).toBeInTheDocument()
+    })
+
+    it('should show empty state in QA tab', () => {
+      const node = createMockNode()
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      fireEvent.click(screen.getByRole('tab', { name: /问答/ }))
+      expect(screen.getByText('对这个知识点提问，深入探索')).toBeInTheDocument()
+    })
+
+    it('should render question input and submit button', () => {
+      const node = createMockNode()
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      fireEvent.click(screen.getByRole('tab', { name: /问答/ }))
+      expect(screen.getByPlaceholderText('输入你的问题...')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /提问/ })).toBeInTheDocument()
+    })
+
+    it('should render QA history list', () => {
+      const node = createMockNode({
+        qas: [
+          {
+            id: 'qa-1',
+            question: 'What is Virtual DOM?',
+            answer: 'A lightweight copy of the real DOM',
+            action: 'save_only',
+            actionResult: 'saved',
+            createdAt: new Date(),
+          },
+        ],
+      })
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      fireEvent.click(screen.getByRole('tab', { name: /问答/ }))
+      expect(screen.getByText('What is Virtual DOM?')).toBeInTheDocument()
+      expect(screen.getByText('A lightweight copy of the real DOM')).toBeInTheDocument()
+    })
+  })
+
   describe('relation navigation', () => {
     it('should display incoming relations in overview tab', () => {
       const node1 = createMockNode({ id: 'node-1', title: 'React' })
       const node2 = createMockNode({ id: 'node-2', title: 'JavaScript' })
       mockCurrentGraph = createMockGraph([node1, node2], [
-        { id: 'edge-1', source: 'node-2', target: 'node-1', type: 'prerequisite' },
-      ])
+        { id: 'edge-1', source: 'node-2', target: 'node-1', type: 'prerequisite' },      ])
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)

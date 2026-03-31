@@ -1,9 +1,10 @@
 import { useKnowledgeStore } from '@/stores'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui'
-import { Book, Code, Wrench, Lightbulb, Clock, ArrowRight, ArrowLeft, Minus, MousePointer2, Eye, Beaker, Target } from 'lucide-react'
+import { Book, Code, Wrench, Lightbulb, Clock, ArrowRight, ArrowLeft, Minus, MousePointer2, Eye, Beaker, Target, MessageCircle } from 'lucide-react'
 import { getRelationTypeName } from '@/lib/llm'
 import { cn } from '@/lib/utils'
+import { QAPanel } from './QAPanel'
 
 const typeIcons = {
   concept: Lightbulb,
@@ -105,6 +106,10 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
               <TabsTrigger value="practices">
                 <Target className="h-3.5 w-3.5 mr-1.5" />
                 实践
+              </TabsTrigger>
+              <TabsTrigger value="qa">
+                <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
+                问答
               </TabsTrigger>
             </TabsList>
 
@@ -270,7 +275,7 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
                   </div>
                 </div>
               ) : (
-                <EmptyState message="暂无原理说明，展开节点后自动获取" />
+                <EmptyState message="暂无深化信息，点击节点上的深化按钮获取详细内容" />
               )}
             </TabsContent>
 
@@ -318,7 +323,7 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
                   )}
                 </div>
               ) : (
-                <EmptyState message="暂无示例，展开节点后自动获取" />
+                <EmptyState message="暂无深化信息，点击节点上的深化按钮获取详细内容" />
               )}
             </TabsContent>
 
@@ -357,8 +362,13 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
                   )}
                 </div>
               ) : (
-                <EmptyState message="暂无实践建议，展开节点后自动获取" />
+                <EmptyState message="暂无实践建议，点击节点上的深化按钮获取" />
               )}
+            </TabsContent>
+
+            {/* 问答 Tab */}
+            <TabsContent value="qa">
+              <QAPanel nodeId={selectedNode.id} />
             </TabsContent>
           </Tabs>
         </CardContent>

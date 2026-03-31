@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils'
 import type { KnowledgeNode } from '@/types'
 import type { GraphUpdateEvent, GraphUpdateEventDetail } from '@/types/events'
 import { computeStructureSignature } from '@/types/events'
-import { expandNode } from '@/services/operationService'
+import { expandOnly, deepenOnly } from '@/services/operationService'
 import { GraphNode } from './GraphNode'
 import { GraphEdge as GraphEdgeComponent } from './GraphEdge'
 import { NodeEditDialog } from './NodeEditDialog'
@@ -118,6 +118,7 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     selectedNodeId,
     expandedNodeIds,
     loadingNodes,
+    loadingDeepenNodes,
     focusMode,
     focusDepth,
     selectNode,
@@ -155,15 +156,26 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     structureNodeCountRef.current = count
   }, [currentGraph?.nodes.size, fitView, currentGraph])
 
-  // 处理节点展开（包装 expandNode 以显示 toast）
+  // 处理节点扩展（只做骨架获取 + 去重 + 写入节点/边）
   const handleExpandNode = useCallback(async (nodeId: string) => {
-    const result = await expandNode(nodeId)
-    // 如果操作成功但用户已切换到其他图谱，显示 toast 提示
+    const result = await expandOnly(nodeId)    // 如果操作成功但用户已切换到其他图谱，显示 toast 提示
     if (result.success && !result.wasCurrentGraph) {
       addToast({
         variant: 'default',
         title: '节点展开完成',
         description: `图谱 "${result.graphName}" 中的节点已在后台展开完成`,
+      })
+    }
+  }, [addToast])
+
+  // 处理节点深化（只做深度内容获取 + 写入）
+  const handleDeepenNode = useCallback(async (nodeId: string) => {
+    const result = await deepenOnly(nodeId)
+    if (result.success && !result.wasCurrentGraph) {
+      addToast({
+        variant: 'default',
+        title: '节点深化完成',
+        description: `图谱 "${result.graphName}" 中的节点已在后台深化完成`,
       })
     }
   }, [addToast])
@@ -262,11 +274,13 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
       data: {
         knowledgeNode: { ...node, expanded: expandedNodeIds.has(node.id) },
         onExpand: handleExpandNode,
+        onDeepen: handleDeepenNode,
         onRetry: handleExpandNode,
         onSelect: selectNode,
         onEdit: setEditingNodeId,
         selected: selectedNodeId === node.id,
         isLoading: loadingNodes.has(node.id),
+        isDeepenLoading: loadingDeepenNodes.has(node.id),
       },
     }))
 
@@ -299,7 +313,7 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     )
 
     return { initialNodes: layoutedNodes, initialEdges: layoutedEdges }
-  }, [currentGraph, expandedNodeIds, selectedNodeId, loadingNodes, visibleNodeIds, selectNode, handleExpandNode])
+  }, [currentGraph, expandedNodeIds, selectedNodeId, loadingNodes, loadingDeepenNodes, visibleNodeIds, selectNode, handleExpandNode, handleDeepenNode])
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)

@@ -5,7 +5,7 @@ import { persist } from 'zustand/middleware'
 export type OperationStatus = 'pending' | 'success' | 'failed' | 'cancelled'
 
 // 操作类型
-export type OperationType = 'create_graph' | 'expand_node'
+export type OperationType = 'create_graph' | 'expand_node' | 'deepen_node'
 
 // 操作上下文
 export interface OperationContext {

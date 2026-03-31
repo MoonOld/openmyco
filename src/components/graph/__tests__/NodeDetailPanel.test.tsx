@@ -130,19 +130,19 @@ describe('NodeDetailPanel', () => {
     it('should switch to principle tab and show empty state', () => {
       render(<NodeDetailPanel />)
       fireEvent.click(screen.getByRole('tab', { name: /原理/ }))
-      expect(screen.getByText('暂无原理说明，展开节点后自动获取')).toBeInTheDocument()
+      expect(screen.getByText('暂无深化信息，点击节点上的深化按钮获取详细内容')).toBeInTheDocument()
     })
 
     it('should switch to examples tab and show empty state', () => {
       render(<NodeDetailPanel />)
       fireEvent.click(screen.getByRole('tab', { name: /示例/ }))
-      expect(screen.getByText('暂无示例，展开节点后自动获取')).toBeInTheDocument()
+      expect(screen.getByText('暂无深化信息，点击节点上的深化按钮获取详细内容')).toBeInTheDocument()
     })
 
     it('should switch to practices tab and show empty state', () => {
       render(<NodeDetailPanel />)
       fireEvent.click(screen.getByRole('tab', { name: /实践/ }))
-      expect(screen.getByText('暂无实践建议，展开节点后自动获取')).toBeInTheDocument()
+      expect(screen.getByText('暂无实践建议，点击节点上的深化按钮获取')).toBeInTheDocument()
     })
   })
 

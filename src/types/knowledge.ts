@@ -43,10 +43,22 @@ export interface KnowledgeNode {
   }>
   // Q&A history
   qas?: KnowledgeQA[]
-  // Operation status (for async operations like expand/create)
+
+  // Expand operation status (structure: skeleton → dedup → nodes/edges)
+  expandStatus?: OperationStatus
+  expandError?: string
+  activeExpandOpId?: string
+
+  // Deepen operation status (content: deep info + related descriptions)
+  deepenStatus?: OperationStatus
+  deepenError?: string
+  activeDeepenOpId?: string
+
+  /** @deprecated Use expandStatus + deepenStatus instead */
   operationStatus?: OperationStatus
+  /** @deprecated Use expandError + deepenError instead */
   operationError?: string
-  // CAS concurrency control: the operationId currently "owning" this node
+  /** @deprecated Use activeExpandOpId + activeDeepenOpId instead */
   activeOperationId?: string
 }
 

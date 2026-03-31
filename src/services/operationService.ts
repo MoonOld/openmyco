@@ -3,7 +3,8 @@
  *
  * 统一的操作管理服务，负责：
  * - 创建图谱
- * - 展开节点
+ * - 展开节点（expandOnly：骨架获取 + 去重 + 写入节点/边）
+ * - 深化节点（deepenOnly：深度信息 + 关联描述 + 写入内容）
  * - 操作状态管理
  * - 定向写入图谱
  *
@@ -33,18 +34,17 @@ export interface OperationResult {
 }
 
 /**
- * 辅助函数：纯状态转换（不包含额外内容字段）
- * 统一 pending/success/failed 状态切换逻辑
+ * 辅助函数：扩展操作状态转换
  */
-async function transitionNodeStatus(
+async function transitionExpandStatus(
   nodeId: string,
   graphId: string,
   status: 'pending' | 'success' | 'failed',
   options?: {
     error?: string
-    activeOperationId?: string
+    activeExpandOpId?: string
     mutationType?: 'structure' | 'content' | 'meta'
-    expectedOperationId?: string
+    expectedExpandOpId?: string
     nodeUpdates?: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }>
     sourceOperationId?: string
   }
@@ -52,14 +52,44 @@ async function transitionNodeStatus(
   return useKnowledgeStore.getState().updateGraphById(graphId, {
     rootNodeId: nodeId,
     rootNodeUpdates: {
-      operationStatus: status,
-      operationError: options?.error,
-      activeOperationId: options?.activeOperationId,
+      expandStatus: status,
+      expandError: options?.error,
+      activeExpandOpId: options?.activeExpandOpId,
     },
     nodeUpdates: options?.nodeUpdates,
     mutationType: options?.mutationType ?? 'meta',
     sourceOperationId: options?.sourceOperationId,
-    expectedOperationId: options?.expectedOperationId,
+    expectedExpandOpId: options?.expectedExpandOpId,
+  })
+}
+
+/**
+ * 辅助函数：深化操作状态转换
+ */
+async function transitionDeepenStatus(
+  nodeId: string,
+  graphId: string,
+  status: 'pending' | 'success' | 'failed',
+  options?: {
+    error?: string
+    activeDeepenOpId?: string
+    mutationType?: 'structure' | 'content' | 'meta'
+    expectedDeepenOpId?: string
+    nodeUpdates?: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }>
+    sourceOperationId?: string
+  }
+): Promise<UpdateGraphResult> {
+  return useKnowledgeStore.getState().updateGraphById(graphId, {
+    rootNodeId: nodeId,
+    rootNodeUpdates: {
+      deepenStatus: status,
+      deepenError: options?.error,
+      activeDeepenOpId: options?.activeDeepenOpId,
+    },
+    nodeUpdates: options?.nodeUpdates,
+    mutationType: options?.mutationType ?? 'meta',
+    sourceOperationId: options?.sourceOperationId,
+    expectedDeepenOpId: options?.expectedDeepenOpId,
   })
 }
 
@@ -83,7 +113,7 @@ export async function createGraph(topic: string): Promise<OperationResult> {
   const operationId = generateId()
   const tempNodeId = generateId()
 
-  // 3. 创建临时节点（含 activeOperationId）
+  // 3. 创建临时节点（含 activeExpandOpId）
   const tempNode: KnowledgeNode = {
     id: tempNodeId,
     title: topic,
@@ -92,8 +122,8 @@ export async function createGraph(topic: string): Promise<OperationResult> {
     expanded: false,
     createdAt: new Date(),
     updatedAt: new Date(),
-    operationStatus: 'pending',
-    activeOperationId: operationId,
+    expandStatus: 'pending',
+    activeExpandOpId: operationId,
   }
 
   // 4. 创建空图谱并设置临时节点
@@ -131,10 +161,10 @@ export async function createGraph(topic: string): Promise<OperationResult> {
 
     if (!response) {
       useOperationStore.getState().failOperation(operationId, 'LLM 未返回数据')
-      // 更新主节点状态为失败，清除 activeOperationId（带 CAS）
-      await transitionNodeStatus(tempNodeId, graphId, 'failed', {
+      // 更新主节点状态为失败，清除 activeExpandOpId（带 CAS）
+      await transitionExpandStatus(tempNodeId, graphId, 'failed', {
         error: '未能获取知识图谱，请重试',
-        expectedOperationId: operationId,
+        expectedExpandOpId: operationId,
       })
       return {
         success: false,
@@ -171,16 +201,16 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       rootNodeId: patch.rootNodeId,
       rootNodeUpdates: {
         ...patch.rootNodeUpdates,
-        operationStatus: 'success',
-        operationError: undefined,
-        activeOperationId: undefined,  // 操作完成，释放 CAS 锁
+        expandStatus: 'success',
+        expandError: undefined,
+        activeExpandOpId: undefined,  // 操作完成，释放 CAS 锁
       },
       newNodes: patch.newNodes,
       newEdges: patch.newEdges,
       graphName: patch.graphName,
       mutationType: 'structure',  // 新建图谱，始终是结构变更
       sourceOperationId: operationId,
-      expectedOperationId: operationId,
+      expectedExpandOpId: operationId,
     })
 
     // 9. 更新操作状态
@@ -203,10 +233,10 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       operationId,
       error instanceof Error ? error.message : '未知错误'
     )
-    // 更新主节点状态为失败，清除 activeOperationId（带 CAS）
-    await transitionNodeStatus(tempNodeId, graphId, 'failed', {
+    // 更新主节点状态为失败，清除 activeExpandOpId（带 CAS）
+    await transitionExpandStatus(tempNodeId, graphId, 'failed', {
       error: error instanceof Error ? error.message : '生成知识图谱时出错',
-      expectedOperationId: operationId,
+      expectedExpandOpId: operationId,
     }).catch(() => {
       // CAS 失败时忽略（操作已被新操作取代）
     })
@@ -221,9 +251,10 @@ export async function createGraph(topic: string): Promise<OperationResult> {
 }
 
 /**
- * 展开节点
+ * 扩展节点（只做骨架：获取关联节点标题 → 去重 → 创建新节点和边）
+ * 不获取深度内容，用户需要单独调用 deepenOnly 获取
  */
-export async function expandNode(nodeId: string): Promise<OperationResult> {
+export async function expandOnly(nodeId: string): Promise<OperationResult> {
   const store = useKnowledgeStore.getState()
   const graph = store.currentGraph
 
@@ -245,19 +276,19 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       success: false,
       operationId: '',
       graphId: graph.id,
-      error: '节点正在加载中',
+      error: '节点正在扩展中',
       wasCurrentGraph: true,
     }
   }
 
-  // 检查是否已展开（跳过失败节点，允许重试）
-  const isFailed = node.operationStatus === 'failed'
-  if (store.expandedNodeIds.has(nodeId) && !isFailed) {
+  // 检查是否已扩展（跳过失败节点，允许重试）
+  const isExpandFailed = node.expandStatus === 'failed' || node.operationStatus === 'failed'
+  if (store.expandedNodeIds.has(nodeId) && !isExpandFailed) {
     return {
       success: false,
       operationId: '',
       graphId: graph.id,
-      error: '节点已展开',
+      error: '节点已扩展',
       wasCurrentGraph: true,
     }
   }
@@ -268,15 +299,10 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
   loadingNodes.add(nodeId)
   useKnowledgeStore.setState({ loadingNodes })
 
-  // 如果是重试失败节点，重置状态
-  if (isFailed) {
-    await transitionNodeStatus(nodeId, graph.id, 'pending')
-  }
-
   const graphId = graph.id
+  const operationId = generateId()
 
   // 记录操作
-  const operationId = generateId()
   useOperationStore.getState().startOperation({
     id: operationId,
     targetGraphId: graphId,
@@ -285,14 +311,13 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     topic: node.title,
   })
 
-  // 写入 activeOperationId 到节点（获取 CAS 锁）
-  await transitionNodeStatus(nodeId, graphId, 'pending', {
-    activeOperationId: operationId,
+  // 写入 activeExpandOpId 到节点（获取扩展 CAS 锁）
+  await transitionExpandStatus(nodeId, graphId, 'pending', {
+    activeExpandOpId: operationId,
     mutationType: 'meta',
   })
 
   let skeletonNodeMap: Map<string, string> | undefined
-  let skeletonNodes: KnowledgeNode[] | undefined
   let newNodeIds: Set<string> | undefined
 
   try {
@@ -304,7 +329,6 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     const client = createLLMClient(llmConfig)
 
     // ========== Step 1: 获取骨架 ==========
-    // 获取相邻节点标题和全图节点标题
     const adjacentNodeIds = new Set(
       graph.edges
         .filter(e => e.source === nodeId || e.target === nodeId)
@@ -325,154 +349,47 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
 
     // 去重处理
     const dedupResult = dedupSkeleton(skeleton.relatedTitles, nodeId, graph.nodes, graph.edges)
-    skeletonNodes = dedupResult.newNodes
+    const skeletonNodes = dedupResult.newNodes
     newNodeIds = new Set(skeletonNodes.map(n => n.id))
     const skeletonEdges = dedupResult.newEdges
     skeletonNodeMap = dedupResult.nodeTitleMap
 
     if (dedupResult.duplicatesFound > 0) {
-      console.log(`[OperationService] Dedup: reused ${dedupResult.duplicatesFound} existing nodes`)
+      console.log(`[expandOnly] Dedup: reused ${dedupResult.duplicatesFound} existing nodes`)
     }
 
-    // 为新节点标记 operationStatus
+    // 为新节点标记 expandStatus
     skeletonNodes.forEach(n => {
-      n.operationStatus = 'pending' as const
+      n.expandStatus = 'pending' as const
     })
 
-    // 定向写入骨架（第一阶段）- 结构变更（带 CAS）
+    // 并发安全校验
+    const currentOp = useOperationStore.getState().getOperation(operationId)
+    if (!currentOp || currentOp.status !== 'pending') {
+      console.log('[expandOnly] 操作已被取消或替换，放弃写入')
+      return {
+        success: false,
+        operationId,
+        graphId,
+        error: '操作已取消',
+        wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
+      }
+    }
+
+    // 定向写入骨架（结构变更，带 CAS）
     await useKnowledgeStore.getState().updateGraphById(graphId, {
       rootNodeId: nodeId,
-      rootNodeUpdates: { expanded: true },
+      rootNodeUpdates: {
+        expanded: true,
+        expandStatus: 'success',
+        expandError: undefined,
+        activeExpandOpId: undefined,  // 扩展完成，释放 CAS 锁
+      },
       newNodes: skeletonNodes,
       newEdges: skeletonEdges,
       mutationType: 'structure',
       sourceOperationId: operationId,
-      expectedOperationId: operationId,
-    })
-
-    // ========== Step 2: 并行获取深度信息（支持部分成功）==========
-    const relatedTitles = skeleton.relatedTitles.map((r) => r.title)
-    const subTopicTitles = skeleton.subTopics?.map((st) => st.title)
-
-    // 检查操作是否仍然有效
-    const currentOp = useOperationStore.getState().getOperation(operationId)
-    if (!currentOp || currentOp.status !== 'pending') {
-      console.log('[OperationService] 操作已被取消或替换，放弃深度获取')
-      return {
-        success: false,
-        operationId,
-        graphId,
-        error: '操作已取消',
-        wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
-      }
-    }
-
-    const [deepInfoResult, relatedInfoResult] = await Promise.allSettled([
-      client.getKnowledgeDeep(skeleton.node.title, skeleton.node.briefDescription, relatedTitles, subTopicTitles),
-      client.getRelatedKnowledge(skeleton.node.title, relatedTitles),
-    ])
-
-    const deepInfo = deepInfoResult.status === 'fulfilled' ? deepInfoResult.value : null
-    const relatedInfo = relatedInfoResult.status === 'fulfilled' ? relatedInfoResult.value : null
-    const deepInfoError = deepInfoResult.status === 'rejected' ? deepInfoResult.reason : null
-    const relatedInfoError = relatedInfoResult.status === 'rejected' ? relatedInfoResult.reason : null
-
-    // 两个都失败 → throw（进入 catch 块，全部标记 failed）
-    if (!deepInfo && !relatedInfo) {
-      const errorMsg = deepInfoError instanceof Error ? deepInfoError.message
-        : relatedInfoError instanceof Error ? relatedInfoError.message
-        : '获取知识信息失败'
-      throw new Error(errorMsg)
-    }
-
-    // 部分成功时记录 warn 日志
-    if (deepInfoError) {
-      console.warn('[OperationService] getKnowledgeDeep 失败，仅使用 relatedInfo:', deepInfoError)
-    }
-    if (relatedInfoError) {
-      console.warn('[OperationService] getRelatedKnowledge 失败，仅使用 deepInfo:', relatedInfoError)
-    }
-
-    // 并发安全校验：检查操作是否仍然有效
-    const opBeforeUpdate = useOperationStore.getState().getOperation(operationId)
-    if (!opBeforeUpdate || opBeforeUpdate.status !== 'pending') {
-      console.log('[OperationService] 操作已被取消或替换，放弃更新')
-      return {
-        success: false,
-        operationId,
-        graphId,
-        error: '操作已取消',
-        wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
-      }
-    }
-
-    // ========== Step 3: 批量更新节点内容（部分成功模式）==========
-    // 主节点更新
-    const rootNodeUpdates: Partial<KnowledgeNode> = {
-      operationStatus: 'success' as const,
-      operationError: undefined,
-      activeOperationId: undefined,  // 操作完成，释放 CAS 锁
-    }
-    if (deepInfo?.description) {
-      Object.assign(rootNodeUpdates, {
-        description: deepInfo.description,
-        estimatedTime: deepInfo.estimatedTime,
-        ...(deepInfo.principle && { principle: deepInfo.principle }),
-        ...(deepInfo.useCases && { useCases: deepInfo.useCases }),
-        ...(deepInfo.examples && { examples: deepInfo.examples }),
-        ...(deepInfo.bestPractices && { bestPractices: deepInfo.bestPractices }),
-        ...(deepInfo.commonMistakes && { commonMistakes: deepInfo.commonMistakes }),
-        ...(deepInfo.keyTerms && { keyTerms: deepInfo.keyTerms }),
-        ...(deepInfo.subTopics && { subTopics: deepInfo.subTopics }),
-      })
-    }
-
-    // 关联节点更新列表
-    const batchNodeUpdates: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }> = []
-    if (relatedInfo) {
-      relatedInfo.forEach((info) => {
-        const skeletonNodeId = skeletonNodeMap!.get(canonicalizeTitle(info.title))
-        if (skeletonNodeId) {
-          batchNodeUpdates.push({
-            nodeId: skeletonNodeId,
-            updates: {
-              description: info.description,
-              difficulty: info.difficulty as 1 | 2 | 3 | 4 | 5,
-              type: info.type as KnowledgeNode['type'],
-              operationStatus: 'success',
-            },
-          })
-        }
-      })
-    }
-
-    // deepInfo 失败但 relatedInfo 成功 → 骨架节点有内容
-    // relatedInfo 失败但 deepInfo 成功 → 新骨架节点标记 failed（去重复用的不受影响）
-    if (!relatedInfo && skeletonNodeMap) {
-      const relatedErrorMsg = relatedInfoError instanceof Error ? relatedInfoError.message : '关联知识获取失败'
-      skeletonNodeMap.forEach((skeletonNodeId) => {
-        // 只标记新创建的骨架节点为 failed，跳过去重复用的节点
-        const isNewNode = newNodeIds?.has(skeletonNodeId)
-        if (isNewNode) {
-          batchNodeUpdates.push({
-            nodeId: skeletonNodeId,
-            updates: {
-              operationStatus: 'failed',
-              operationError: relatedErrorMsg,
-            },
-          })
-        }
-      })
-    }
-
-    // 一次批量写入所有节点内容（带 CAS）
-    await useKnowledgeStore.getState().updateGraphById(graphId, {
-      rootNodeId: nodeId,
-      rootNodeUpdates,
-      nodeUpdates: batchNodeUpdates,
-      mutationType: 'content',
-      sourceOperationId: operationId,
-      expectedOperationId: operationId,
+      expectedExpandOpId: operationId,
     })
 
     // 标记展开完成
@@ -498,8 +415,8 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
       )
     }
 
-    // 标记主节点为失败，清除 activeOperationId
-    const errorMessage = error instanceof Error ? error.message : '展开节点时出错'
+    // 标记主节点为失败，清除 activeExpandOpId
+    const errorMessage = error instanceof Error ? error.message : '扩展节点时出错'
     const batchFailUpdates: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }> = []
 
     // 骨架节点也标记为 failed（只标记新创建的，跳过去重复用的节点）
@@ -510,19 +427,19 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
           batchFailUpdates.push({
             nodeId: skeletonNodeId,
             updates: {
-              operationStatus: 'failed',
-              operationError: errorMessage,
+              expandStatus: 'failed',
+              expandError: errorMessage,
             },
           })
         }
       })
     }
 
-    await transitionNodeStatus(nodeId, graphId, 'failed', {
+    await transitionExpandStatus(nodeId, graphId, 'failed', {
       error: errorMessage,
       nodeUpdates: batchFailUpdates,
       sourceOperationId: operationId,
-      expectedOperationId: operationId,
+      expectedExpandOpId: operationId,
     }).catch(() => {
       // CAS 校验失败时忽略（操作已被新操作取代）
     })
@@ -543,6 +460,281 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
 }
 
 /**
+ * 深化节点（只做深度内容：getKnowledgeDeep + getRelatedKnowledge）
+ * 不创建新节点/边，只更新已有节点的内容字段
+ */
+export async function deepenOnly(nodeId: string): Promise<OperationResult> {
+  const store = useKnowledgeStore.getState()
+  const graph = store.currentGraph
+
+  if (!graph || !graph.nodes.has(nodeId)) {
+    return {
+      success: false,
+      operationId: '',
+      graphId: '',
+      error: '节点不存在',
+      wasCurrentGraph: false,
+    }
+  }
+
+  const node = graph.nodes.get(nodeId)!
+
+  // 需要有描述才能深化
+  if (!node.description) {
+    return {
+      success: false,
+      operationId: '',
+      graphId: graph.id,
+      error: '节点无描述，无法深化',
+      wasCurrentGraph: true,
+    }
+  }
+
+  // 检查是否正在深化
+  if (store.loadingDeepenNodes.has(nodeId)) {
+    return {
+      success: false,
+      operationId: '',
+      graphId: graph.id,
+      error: '节点正在深化中',
+      wasCurrentGraph: true,
+    }
+  }
+
+  // 检查是否已深化（跳过失败节点，允许重试）
+  const isDeepenFailed = node.deepenStatus === 'failed'
+  if (store.deepenedNodeIds.has(nodeId) && !isDeepenFailed) {
+    return {
+      success: false,
+      operationId: '',
+      graphId: graph.id,
+      error: '节点已深化',
+      wasCurrentGraph: true,
+    }
+  }
+
+  // 设置 loading 状态
+  const loadingDeepenNodes = new Set(store.loadingDeepenNodes)
+  loadingDeepenNodes.add(nodeId)
+  useKnowledgeStore.setState({ loadingDeepenNodes })
+
+  const graphId = graph.id
+  const operationId = generateId()
+
+  // 记录操作
+  useOperationStore.getState().startOperation({
+    id: operationId,
+    targetGraphId: graphId,
+    targetNodeId: nodeId,
+    type: 'deepen_node',
+    topic: node.title,
+  })
+
+  // 写入 activeDeepenOpId 到节点（获取深化 CAS 锁）
+  await transitionDeepenStatus(nodeId, graphId, 'pending', {
+    activeDeepenOpId: operationId,
+    mutationType: 'meta',
+  })
+
+  try {
+    const { llmConfig } = useSettingsStore.getState()
+    if (!llmConfig.apiKey) {
+      throw new Error('请先配置 API Key')
+    }
+
+    const client = createLLMClient(llmConfig)
+
+    // 获取关联节点标题（从已有边中获取）
+    const adjacentNodeIds = new Set(
+      graph.edges
+        .filter(e => e.source === nodeId || e.target === nodeId)
+        .map(e => e.source === nodeId ? e.target : e.source)
+    )
+    const relatedTitles = Array.from(adjacentNodeIds)
+      .map(id => graph.nodes.get(id)?.title)
+      .filter(Boolean) as string[]
+
+    const subTopicTitles = node.subTopics?.map(st => st.title)
+
+    // 并行获取深度信息（支持部分成功）
+    const [deepInfoResult, relatedInfoResult] = await Promise.allSettled([
+      client.getKnowledgeDeep(node.title, node.description, relatedTitles, subTopicTitles),
+      client.getRelatedKnowledge(node.title, relatedTitles),
+    ])
+
+    const deepInfo = deepInfoResult.status === 'fulfilled' ? deepInfoResult.value : null
+    const relatedInfo = relatedInfoResult.status === 'fulfilled' ? relatedInfoResult.value : null
+    const deepInfoError = deepInfoResult.status === 'rejected' ? deepInfoResult.reason : null
+    const relatedInfoError = relatedInfoResult.status === 'rejected' ? relatedInfoResult.reason : null
+
+    // 两个都失败 → throw
+    if (!deepInfo && !relatedInfo) {
+      const errorMsg = deepInfoError instanceof Error ? deepInfoError.message
+        : relatedInfoError instanceof Error ? relatedInfoError.message
+        : '获取知识信息失败'
+      throw new Error(errorMsg)
+    }
+
+    // 部分成功时记录 warn 日志
+    if (deepInfoError) {
+      console.warn('[deepenOnly] getKnowledgeDeep 失败，仅使用 relatedInfo:', deepInfoError)
+    }
+    if (relatedInfoError) {
+      console.warn('[deepenOnly] getRelatedKnowledge 失败，仅使用 deepInfo:', relatedInfoError)
+    }
+
+    // 并发安全校验
+    const opBeforeUpdate = useOperationStore.getState().getOperation(operationId)
+    if (!opBeforeUpdate || opBeforeUpdate.status !== 'pending') {
+      console.log('[deepenOnly] 操作已被取消或替换，放弃更新')
+      return {
+        success: false,
+        operationId,
+        graphId,
+        error: '操作已取消',
+        wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
+      }
+    }
+
+    // 批量更新节点内容
+    const rootNodeUpdates: Partial<KnowledgeNode> = {
+      deepenStatus: 'success' as const,
+      deepenError: undefined,
+      activeDeepenOpId: undefined,  // 操作完成，释放 CAS 锁
+    }
+    if (deepInfo?.description) {
+      Object.assign(rootNodeUpdates, {
+        description: deepInfo.description,
+        estimatedTime: deepInfo.estimatedTime,
+        ...(deepInfo.principle && { principle: deepInfo.principle }),
+        ...(deepInfo.useCases && { useCases: deepInfo.useCases }),
+        ...(deepInfo.examples && { examples: deepInfo.examples }),
+        ...(deepInfo.bestPractices && { bestPractices: deepInfo.bestPractices }),
+        ...(deepInfo.commonMistakes && { commonMistakes: deepInfo.commonMistakes }),
+        ...(deepInfo.keyTerms && { keyTerms: deepInfo.keyTerms }),
+        ...(deepInfo.subTopics && { subTopics: deepInfo.subTopics }),
+      })
+    }
+
+    // 关联节点更新列表（补充描述）
+    const batchNodeUpdates: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }> = []
+    if (relatedInfo) {
+      relatedInfo.forEach((info) => {
+        // 通过标题查找关联节点
+        const canonicalTitle = canonicalizeTitle(info.title)
+        const targetNodeId = canonicalTitle
+          ? findNodeIdByCanonicalTitle(graph.nodes, canonicalTitle)
+          : undefined
+        if (targetNodeId) {
+          const existingNode = graph.nodes.get(targetNodeId)
+          // 只补充空字段
+          if (existingNode && !existingNode.description) {
+            batchNodeUpdates.push({
+              nodeId: targetNodeId,
+              updates: {
+                description: info.description,
+                difficulty: info.difficulty as 1 | 2 | 3 | 4 | 5,
+                type: info.type as KnowledgeNode['type'],
+              },
+            })
+          }
+        }
+      })
+    }
+
+    // 一次批量写入所有节点内容（带 CAS）
+    await useKnowledgeStore.getState().updateGraphById(graphId, {
+      rootNodeId: nodeId,
+      rootNodeUpdates,
+      nodeUpdates: batchNodeUpdates,
+      mutationType: 'content',
+      sourceOperationId: operationId,
+      expectedDeepenOpId: operationId,
+    })
+
+    // 标记深化完成
+    useKnowledgeStore.getState().setDeepened(nodeId, true)
+
+    // 完成操作
+    useOperationStore.getState().completeOperation(operationId)
+
+    return {
+      success: true,
+      operationId,
+      graphId,
+      graphName: graph.name,
+      wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
+    }
+  } catch (error) {
+    // 先检查操作是否仍然有效，再标记失败
+    const currentOp = useOperationStore.getState().getOperation(operationId)
+    if (currentOp?.status === 'pending') {
+      useOperationStore.getState().failOperation(
+        operationId,
+        error instanceof Error ? error.message : '未知错误'
+      )
+    }
+
+    // 标记主节点为失败，清除 activeDeepenOpId
+    const errorMessage = error instanceof Error ? error.message : '深化节点时出错'
+
+    await transitionDeepenStatus(nodeId, graphId, 'failed', {
+      error: errorMessage,
+      sourceOperationId: operationId,
+      expectedDeepenOpId: operationId,
+    }).catch(() => {
+      // CAS 校验失败时忽略
+    })
+
+    return {
+      success: false,
+      operationId,
+      graphId,
+      error: errorMessage,
+      wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
+    }
+  } finally {
+    // 清除 loading 状态
+    const loadingDeepenNodes = new Set(useKnowledgeStore.getState().loadingDeepenNodes)
+    loadingDeepenNodes.delete(nodeId)
+    useKnowledgeStore.setState({ loadingDeepenNodes })
+  }
+}
+
+/**
+ * 通过 canonical title 查找节点 ID
+ */
+function findNodeIdByCanonicalTitle(
+  nodes: Map<string, KnowledgeNode>,
+  canonicalTitle: string
+): string | undefined {
+  for (const [id, node] of nodes) {
+    if (canonicalizeTitle(node.title) === canonicalTitle) {
+      return id
+    }
+  }
+  return undefined
+}
+
+/**
+ * 展开节点（组合入口：expandOnly → deepenOnly）
+ * 保留向后兼容
+ */
+export async function expandNode(nodeId: string): Promise<OperationResult> {
+  // 先扩展
+  const expandResult = await expandOnly(nodeId)
+  if (!expandResult.success) {
+    return expandResult
+  }
+
+  // 再深化
+  const deepenResult = await deepenOnly(nodeId)
+
+  // 返回深化结果（因为深化是最后执行的）
+  return deepenResult
+}
+
+/**
  * 恢复未完成的操作（页面加载时调用）
  * 从 IndexedDB 读取所有图谱，检查 pending 节点
  */
@@ -556,15 +748,28 @@ export async function resumePendingOperations(): Promise<void> {
   for (const stored of allStored) {
     const graph = storedToRuntime(stored)
     const pendingNodes = Array.from(graph.nodes.values()).filter(
-      (node) => node.operationStatus === 'pending'
+      (node) => node.expandStatus === 'pending' || node.deepenStatus === 'pending'
+        || node.operationStatus === 'pending'  // 兼容旧数据
     )
 
     if (pendingNodes.length === 0) continue
     totalPending += pendingNodes.length
 
     for (const node of pendingNodes) {
-      await transitionNodeStatus(node.id, graph.id, 'failed', {
-        error: '操作中断，请点击重试',
+      // 同时标记扩展和深化状态
+      const updates: Partial<KnowledgeNode> = {}
+      if (node.expandStatus === 'pending' || node.operationStatus === 'pending') {
+        updates.expandStatus = 'failed'
+        updates.expandError = '操作中断，请点击重试'
+      }
+      if (node.deepenStatus === 'pending') {
+        updates.deepenStatus = 'failed'
+        updates.deepenError = '操作中断，请点击重试'
+      }
+      await useKnowledgeStore.getState().updateGraphById(graph.id, {
+        rootNodeId: node.id,
+        rootNodeUpdates: updates,
+        mutationType: 'meta',
       })
     }
   }

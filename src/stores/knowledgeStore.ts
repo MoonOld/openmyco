@@ -35,8 +35,10 @@ interface KnowledgeState {
   currentGraph: KnowledgeGraph | null
   selectedNodeId: string | null
   expandedNodeIds: Set<string>
+  deepenedNodeIds: Set<string>
   loading: boolean
   loadingNodes: Set<string>  // Nodes currently being expanded
+  loadingDeepenNodes: Set<string>  // Nodes currently being deepened
   error: string | null
   focusMode: boolean  // Whether to show only focused node and neighbors
   focusDepth: number  // How many degrees of neighbors to show (1 = direct neighbors)
@@ -48,6 +50,7 @@ interface KnowledgeState {
   selectNode: (nodeId: string | null) => void
   toggleExpand: (nodeId: string) => void
   setExpanded: (nodeId: string, expanded: boolean) => void
+  setDeepened: (nodeId: string, deepened: boolean) => void
   /** @deprecated Use operationService.expandNode instead — UI 已切换到 operationService */
   expandNode: (nodeId: string) => Promise<void>
   addNodes: (nodes: KnowledgeNode[]) => { added: KnowledgeNode[]; skipped: KnowledgeNode[] }
@@ -79,6 +82,8 @@ interface KnowledgeState {
       mutationType?: GraphMutationType  // 由调用方决定
       sourceOperationId?: string        // 操作来源追踪
       expectedOperationId?: string      // CAS 校验：节点当前的 activeOperationId 应匹配
+      expectedExpandOpId?: string       // CAS 校验：扩展操作锁
+      expectedDeepenOpId?: string       // CAS 校验：深化操作锁
       nodeUpdates?: Array<{ nodeId: string; updates: Partial<KnowledgeNode> }>  // 批量节点更新
     }
   ) => Promise<UpdateGraphResult>
@@ -91,7 +96,9 @@ export const useKnowledgeStore = create<KnowledgeState>()(
       currentGraph: null,
       selectedNodeId: null,
       expandedNodeIds: new Set<string>(),
+      deepenedNodeIds: new Set<string>(),
       loadingNodes: new Set<string>(),
+      loadingDeepenNodes: new Set<string>(),
       loading: false,
       error: null,
       focusMode: true,  // Default to focus mode
@@ -105,8 +112,10 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           currentGraph: graph,
           selectedNodeId: null,
           expandedNodeIds: new Set(),
+          deepenedNodeIds: new Set(),
           // 切换视图时清除 loading 状态（后台操作会继续执行）
           loadingNodes: new Set(),
+          loadingDeepenNodes: new Set(),
           loading: false,
         }),
 
@@ -253,6 +262,16 @@ export const useKnowledgeStore = create<KnowledgeState>()(
         set({ expandedNodeIds: expandedSet })
       },
 
+      setDeepened: (nodeId, deepened) => {
+        const deepenedSet = new Set(get().deepenedNodeIds)
+        if (deepened) {
+          deepenedSet.add(nodeId)
+        } else {
+          deepenedSet.delete(nodeId)
+        }
+        set({ deepenedNodeIds: deepenedSet })
+      },
+
       addNodes: (nodes) => {
         const graph = get().currentGraph
         if (!graph) return { added: [] as KnowledgeNode[], skipped: [] as KnowledgeNode[] }
@@ -357,6 +376,7 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           currentGraph: null,
           selectedNodeId: null,
           expandedNodeIds: new Set(),
+          deepenedNodeIds: new Set(),
         }),
 
       createGraph: (rootNode) => {
@@ -384,7 +404,7 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           createdAt: new Date(),
           updatedAt: new Date(),
         }
-        set({ currentGraph: graph, selectedNodeId: null, expandedNodeIds: new Set() })
+        set({ currentGraph: graph, selectedNodeId: null, expandedNodeIds: new Set(), deepenedNodeIds: new Set() })
       },
 
       isEmptyGraph: () => {
@@ -609,18 +629,9 @@ export const useKnowledgeStore = create<KnowledgeState>()(
 
           const graph = storedToRuntime(stored)
 
-          // CAS 校验：检查 activeOperationId 是否匹配
-          if (updates.expectedOperationId) {
-            const rootNode = graph.nodes.get(updates.rootNodeId)
-            if (!rootNode) {
-              return {
-                success: false,
-                isCurrentGraph: false,
-                graphName: '',
-                error: 'CAS 校验失败：目标节点不存在',
-                conflict: true,
-              }
-            }
+          // CAS 校验：检查 activeOperationId 是否匹配（兼容旧锁 + 新扩展锁 + 新深化锁）
+          const rootNode = graph.nodes.get(updates.rootNodeId)
+          if (updates.expectedOperationId && rootNode) {
             if (rootNode.activeOperationId !== updates.expectedOperationId) {
               return {
                 success: false,
@@ -631,12 +642,34 @@ export const useKnowledgeStore = create<KnowledgeState>()(
               }
             }
           }
+          if (updates.expectedExpandOpId && rootNode) {
+            if (rootNode.activeExpandOpId !== updates.expectedExpandOpId) {
+              return {
+                success: false,
+                isCurrentGraph: false,
+                graphName: '',
+                error: 'CAS 校验失败：扩展操作已被替换',
+                conflict: true,
+              }
+            }
+          }
+          if (updates.expectedDeepenOpId && rootNode) {
+            if (rootNode.activeDeepenOpId !== updates.expectedDeepenOpId) {
+              return {
+                success: false,
+                isCurrentGraph: false,
+                graphName: '',
+                error: 'CAS 校验失败：深化操作已被替换',
+                conflict: true,
+              }
+            }
+          }
 
           // 更新根节点
-          const rootNode = graph.nodes.get(updates.rootNodeId)
-          if (rootNode) {
+          const existingRootNode = rootNode ?? graph.nodes.get(updates.rootNodeId)
+          if (existingRootNode) {
             graph.nodes.set(updates.rootNodeId, {
-              ...rootNode,
+              ...existingRootNode,
               ...updates.rootNodeUpdates,
               updatedAt: new Date(),
             })
@@ -749,7 +782,9 @@ export const useKnowledgeStore = create<KnowledgeState>()(
             }
           : null,
         expandedNodeIds: Array.from(state.expandedNodeIds),
+        deepenedNodeIds: Array.from(state.deepenedNodeIds),
         loadingNodes: Array.from(state.loadingNodes),
+        loadingDeepenNodes: Array.from(state.loadingDeepenNodes),
       }),
       merge: (persistedState: unknown, currentState: KnowledgeState) => {
         const state = persistedState as {
@@ -759,7 +794,9 @@ export const useKnowledgeStore = create<KnowledgeState>()(
             updatedAt?: string
           }
           expandedNodeIds?: string[]
+          deepenedNodeIds?: string[]
           loadingNodes?: string[]
+          loadingDeepenNodes?: string[]
         }
 
         const result: Partial<KnowledgeState> = {}
@@ -795,9 +832,51 @@ export const useKnowledgeStore = create<KnowledgeState>()(
           ? new Set(state.expandedNodeIds)
           : new Set()
 
+        result.deepenedNodeIds = state.deepenedNodeIds
+          ? new Set(state.deepenedNodeIds)
+          : new Set()
+
         result.loadingNodes = state.loadingNodes
           ? new Set(state.loadingNodes)
           : new Set()
+
+        result.loadingDeepenNodes = state.loadingDeepenNodes
+          ? new Set(state.loadingDeepenNodes)
+          : new Set()
+
+        // Migration: 旧 operationStatus → expandStatus
+        if (result.currentGraph) {
+          const migratedNodes = new Map<string, KnowledgeNode>()
+          result.currentGraph.nodes.forEach((node) => {
+            if (node.operationStatus && !node.expandStatus) {
+              // 旧节点迁移：operationStatus → expandStatus
+              migratedNodes.set(node.id, {
+                ...node,
+                expandStatus: node.operationStatus,
+                expandError: node.operationError,
+                activeExpandOpId: node.activeOperationId,
+                // 如果 expanded=true 且 operationStatus=success，也标记 deepenStatus=success
+                ...(node.expanded && node.operationStatus === 'success' && !node.deepenStatus && {
+                  deepenStatus: 'success' as const,
+                }),
+              })
+            } else {
+              migratedNodes.set(node.id, node)
+            }
+          })
+          result.currentGraph = { ...result.currentGraph, nodes: migratedNodes }
+
+          // 迁移 expandedNodeIds 中有 expandStatus=success 的节点也加入 deepenedNodeIds
+          const expandedSet = result.expandedNodeIds
+          if (expandedSet) {
+            expandedSet.forEach((nodeId) => {
+              const node = migratedNodes.get(nodeId)
+              if (node?.deepenStatus === 'success' && result.deepenedNodeIds) {
+                result.deepenedNodeIds.add(nodeId)
+              }
+            })
+          }
+        }
 
         return { ...currentState, ...result }
       },

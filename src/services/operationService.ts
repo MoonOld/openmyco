@@ -204,6 +204,7 @@ export async function createGraph(topic: string): Promise<OperationResult> {
         expandStatus: 'success',
         expandError: undefined,
         activeExpandOpId: undefined,  // 操作完成，释放 CAS 锁
+        deepenStatus: 'success',      // 创建图谱时 LLM 已返回深度内容
       },
       newNodes: patch.newNodes,
       newEdges: patch.newEdges,
@@ -212,6 +213,10 @@ export async function createGraph(topic: string): Promise<OperationResult> {
       sourceOperationId: operationId,
       expectedExpandOpId: operationId,
     })
+
+    // 标记扩展和深化完成
+    useKnowledgeStore.getState().setExpanded(tempNodeId, true)
+    useKnowledgeStore.getState().setDeepened(tempNodeId, true)
 
     // 9. 更新操作状态
     if (result.success) {

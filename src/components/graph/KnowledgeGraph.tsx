@@ -169,8 +169,8 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
   }, [addToast])
 
   // 处理节点深化（只做深度内容获取 + 写入）
-  const handleDeepenNode = useCallback(async (nodeId: string) => {
-    const result = await deepenOnly(nodeId)
+  const handleDeepenNode = useCallback(async (nodeId: string, options?: { force?: boolean }) => {
+    const result = await deepenOnly(nodeId, options)
     if (result.success && !result.wasCurrentGraph) {
       addToast({
         variant: 'default',

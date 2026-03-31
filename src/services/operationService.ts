@@ -463,7 +463,7 @@ export async function expandOnly(nodeId: string): Promise<OperationResult> {
  * 深化节点（只做深度内容：getKnowledgeDeep + getRelatedKnowledge）
  * 不创建新节点/边，只更新已有节点的内容字段
  */
-export async function deepenOnly(nodeId: string): Promise<OperationResult> {
+export async function deepenOnly(nodeId: string, options?: { force?: boolean }): Promise<OperationResult> {
   const store = useKnowledgeStore.getState()
   const graph = store.currentGraph
 
@@ -501,9 +501,9 @@ export async function deepenOnly(nodeId: string): Promise<OperationResult> {
     }
   }
 
-  // 检查是否已深化（跳过失败节点，允许重试）
+  // 检查是否已深化（跳过失败节点，允许重试；force=true 时跳过拦截）
   const isDeepenFailed = node.deepenStatus === 'failed'
-  if (store.deepenedNodeIds.has(nodeId) && !isDeepenFailed) {
+  if (store.deepenedNodeIds.has(nodeId) && !isDeepenFailed && !options?.force) {
     return {
       success: false,
       operationId: '',

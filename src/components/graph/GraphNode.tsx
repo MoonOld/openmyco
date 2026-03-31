@@ -6,7 +6,7 @@ import type { KnowledgeNode } from '@/types'
 interface GraphNodeData {
   knowledgeNode: KnowledgeNode
   onExpand?: (nodeId: string) => void
-  onDeepen?: (nodeId: string) => void
+  onDeepen?: (nodeId: string, options?: { force?: boolean }) => void
   onSelect?: (nodeId: string) => void
   onEdit?: (nodeId: string) => void
   onRetry?: (nodeId: string) => void
@@ -45,7 +45,11 @@ export function GraphNode({ data, selected }: NodeProps<GraphNodeData>) {
 
   const handleDeepen = (e: React.MouseEvent) => {
     e.stopPropagation()
-    data.onDeepen?.(node.id)
+    if (isDeepened) {
+      const confirmed = window.confirm('重新深化将覆盖已有的详细内容（原理、示例、实践建议等），是否继续？')
+      if (!confirmed) return
+    }
+    data.onDeepen?.(node.id, { force: isDeepened })
   }
 
   const handleEdit = (e: React.MouseEvent) => {
@@ -80,7 +84,6 @@ export function GraphNode({ data, selected }: NodeProps<GraphNodeData>) {
   const canDeepen = node.description !== ''
     && !isDeepenLoading
     && !isDeepenPending
-    && (!isDeepened || isDeepenFailed)
 
   return (
     <div
@@ -149,7 +152,7 @@ export function GraphNode({ data, selected }: NodeProps<GraphNodeData>) {
                 isDeepenFailed
                   ? "bg-red-100 text-red-700 border border-red-200 hover:bg-red-200"
                   : isDeepened
-                    ? "bg-green-50 text-green-600 border border-green-200"
+                    ? "bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 hover:shadow-sm"
                     : canDeepen
                       ? "bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 hover:shadow-sm"
                       : "bg-gray-50 text-gray-300 cursor-not-allowed border border-gray-100"
@@ -158,7 +161,7 @@ export function GraphNode({ data, selected }: NodeProps<GraphNodeData>) {
                 isDeepenFailed
                   ? node.deepenError || '深化失败，点击重试'
                   : isDeepened
-                    ? '已深化'
+                    ? '重新深化：重新生成详细内容'
                     : canDeepen
                       ? '深化：获取详细内容'
                       : '需要先有描述才能深化'
@@ -167,12 +170,14 @@ export function GraphNode({ data, selected }: NodeProps<GraphNodeData>) {
             >
               {isDeepenLoading || isDeepenPending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : isDeepened ? (
+                <RotateCcw className="h-3.5 w-3.5" />
               ) : (
                 <Microscope className="h-3.5 w-3.5" />
               )}
             </button>
             {/* 未深化时显示提示圆点 */}
-            {canDeepen && !isDeepened && (
+            {canDeepen && !isDeepened && !isDeepenFailed && (
               <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
             )}
           </div>

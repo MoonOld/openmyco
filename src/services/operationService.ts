@@ -310,6 +310,17 @@ export async function expandOnly(nodeId: string): Promise<OperationResult> {
   const graphId = graph.id
   const operationId = generateId()
 
+  // 校验是否已有活跃扩展锁
+  if (node.activeExpandOpId || node.activeOperationId) {
+    return {
+      success: false,
+      operationId: '',
+      graphId,
+      error: '节点正在被其他操作扩展中',
+      wasCurrentGraph: true,
+    }
+  }
+
   // 记录操作
   useOperationStore.getState().startOperation({
     id: operationId,
@@ -366,10 +377,7 @@ export async function expandOnly(nodeId: string): Promise<OperationResult> {
       console.log(`[expandOnly] Dedup: reused ${dedupResult.duplicatesFound} existing nodes`)
     }
 
-    // 为新节点标记 expandStatus
-    skeletonNodes.forEach(n => {
-      n.expandStatus = 'pending' as const
-    })
+    // 新骨架节点不设置 expandStatus（undefined = 未扩展，可被用户点击扩展）
 
     // 并发安全校验
     const currentOp = useOperationStore.getState().getOperation(operationId)
@@ -528,6 +536,17 @@ export async function deepenOnly(nodeId: string, options?: { force?: boolean }):
 
   const graphId = graph.id
   const operationId = generateId()
+
+  // 校验是否已有活跃深化锁
+  if (node.activeDeepenOpId) {
+    return {
+      success: false,
+      operationId: '',
+      graphId,
+      error: '节点正在被其他操作深化中',
+      wasCurrentGraph: true,
+    }
+  }
 
   // 记录操作
   useOperationStore.getState().startOperation({
@@ -725,7 +744,8 @@ function findNodeIdByCanonicalTitle(
 }
 
 /**
- * 展开节点（组合入口：expandOnly → deepenOnly）
+ * 展开节点（组合入口：expandOnly → fire-and-forget deepenOnly）
+ * 扩展成功即返回成功，深化在后台异步执行（失败不影响扩展结果）
  * 保留向后兼容
  */
 export async function expandNode(nodeId: string): Promise<OperationResult> {
@@ -735,11 +755,12 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
     return expandResult
   }
 
-  // 再深化
-  const deepenResult = await deepenOnly(nodeId)
+  // 再深化（fire-and-forget，失败不影响扩展结果）
+  deepenOnly(nodeId).catch((err) => {
+    console.warn('[expandNode] 深化失败（扩展已成功）:', err)
+  })
 
-  // 返回深化结果（因为深化是最后执行的）
-  return deepenResult
+  return expandResult
 }
 
 /**
@@ -764,15 +785,18 @@ export async function resumePendingOperations(): Promise<void> {
     totalPending += pendingNodes.length
 
     for (const node of pendingNodes) {
-      // 同时标记扩展和深化状态
+      // 同时标记扩展和深化状态，清除残留 CAS 锁
       const updates: Partial<KnowledgeNode> = {}
       if (node.expandStatus === 'pending' || node.operationStatus === 'pending') {
         updates.expandStatus = 'failed'
         updates.expandError = '操作中断，请点击重试'
+        updates.activeExpandOpId = undefined
+        updates.activeOperationId = undefined  // 兼容旧数据
       }
       if (node.deepenStatus === 'pending') {
         updates.deepenStatus = 'failed'
         updates.deepenError = '操作中断，请点击重试'
+        updates.activeDeepenOpId = undefined
       }
       await useKnowledgeStore.getState().updateGraphById(graph.id, {
         rootNodeId: node.id,

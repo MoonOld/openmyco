@@ -89,6 +89,9 @@ interface KnowledgeState {
   ) => Promise<UpdateGraphResult>
 }
 
+// per-graph 写队列：同图谱的异步写操作串行化，防止 expand/deepen 交叉覆盖
+const graphWriteLocks = new Map<string, Promise<void>>()
+
 export const useKnowledgeStore = create<KnowledgeState>()(
   persist(
     (set, get) => ({
@@ -107,17 +110,31 @@ export const useKnowledgeStore = create<KnowledgeState>()(
       qaError: null,
 
       // Actions
-      setCurrentGraph: (graph) =>
+      setCurrentGraph: (graph) => {
+        // 从图谱节点数据重建 expandedNodeIds / deepenedNodeIds
+        const expandedNodeIds = new Set<string>()
+        const deepenedNodeIds = new Set<string>()
+        if (graph) {
+          graph.nodes.forEach((node) => {
+            if (node.expanded || node.expandStatus === 'success' || node.operationStatus === 'success') {
+              expandedNodeIds.add(node.id)
+            }
+            if (node.deepenStatus === 'success') {
+              deepenedNodeIds.add(node.id)
+            }
+          })
+        }
         set({
           currentGraph: graph,
           selectedNodeId: null,
-          expandedNodeIds: new Set(),
-          deepenedNodeIds: new Set(),
+          expandedNodeIds,
+          deepenedNodeIds,
           // 切换视图时清除 loading 状态（后台操作会继续执行）
           loadingNodes: new Set(),
           loadingDeepenNodes: new Set(),
           loading: false,
-        }),
+        })
+      },
 
       selectNode: (nodeId) => set({ selectedNodeId: nodeId }),
 
@@ -613,9 +630,14 @@ export const useKnowledgeStore = create<KnowledgeState>()(
        *
        * CAS 机制：若 expectedOperationId 存在，校验目标节点的 activeOperationId 是否匹配。
        * 这可以防止旧的异步操作覆盖新操作的结果。
+       *
+       * 并发安全：同一图谱的写操作通过 per-graph 队列串行化，避免交叉覆盖。
        */
       updateGraphById: async (graphId, updates) => {
-        try {
+        // per-graph 写队列：同图谱的写操作串行化，防止交叉覆盖
+        const prev = graphWriteLocks.get(graphId) ?? Promise.resolve()
+        const doWrite = async (): Promise<UpdateGraphResult> => {
+          try {
           // 从 IndexedDB 加载目标图谱
           const stored = await GraphRepository.getById(graphId)
           if (!stored) {
@@ -770,6 +792,12 @@ export const useKnowledgeStore = create<KnowledgeState>()(
             error: error instanceof Error ? error.message : '更新图谱失败',
           }
         }
+        }
+
+        // 将 doWrite 链接到 per-graph 队列，并返回结果
+        const next = prev.then(() => doWrite(), () => doWrite())
+        graphWriteLocks.set(graphId, next.then(() => {}, () => {}))
+        return next
       },
     }),
     {

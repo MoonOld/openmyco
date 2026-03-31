@@ -21,7 +21,7 @@ import { cn } from '@/lib/utils'
 import type { KnowledgeNode } from '@/types'
 import type { GraphUpdateEvent, GraphUpdateEventDetail } from '@/types/events'
 import { computeStructureSignature } from '@/types/events'
-import { expandOnly, deepenOnly } from '@/services/operationService'
+import { expandOnly, deepenOnly, expandNode } from '@/services/operationService'
 import { GraphNode } from './GraphNode'
 import { GraphEdge as GraphEdgeComponent } from './GraphEdge'
 import { NodeEditDialog } from './NodeEditDialog'
@@ -117,6 +117,7 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     currentGraph,
     selectedNodeId,
     expandedNodeIds,
+    deepenedNodeIds,
     loadingNodes,
     loadingDeepenNodes,
     focusMode,
@@ -156,9 +157,12 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
     structureNodeCountRef.current = count
   }, [currentGraph?.nodes.size, fitView, currentGraph])
 
-  // 处理节点扩展（只做骨架获取 + 去重 + 写入节点/边）
+  // 处理节点扩展（骨架 + 自动深化；已深化则只做骨架）
   const handleExpandNode = useCallback(async (nodeId: string) => {
-    const result = await expandOnly(nodeId)    // 如果操作成功但用户已切换到其他图谱，显示 toast 提示
+    const isDeepened = deepenedNodeIds.has(nodeId)
+    const fn = isDeepened ? expandOnly : expandNode
+    const result = await fn(nodeId)
+    // 如果操作成功但用户已切换到其他图谱，显示 toast 提示
     if (result.success && !result.wasCurrentGraph) {
       addToast({
         variant: 'default',
@@ -166,7 +170,7 @@ export function KnowledgeGraph({ className }: KnowledgeGraphProps) {
         description: `图谱 "${result.graphName}" 中的节点已在后台展开完成`,
       })
     }
-  }, [addToast])
+  }, [addToast, deepenedNodeIds])
 
   // 处理节点深化（只做深度内容获取 + 写入）
   const handleDeepenNode = useCallback(async (nodeId: string, options?: { force?: boolean }) => {

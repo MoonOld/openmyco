@@ -518,6 +518,7 @@ export function parseDeepResponse(content: string, subTopicTitles?: string[]): {
   commonMistakes?: string[]
   keyTerms?: Array<{ term: string; definition: string }>
   subTopics?: Array<{ title: string; description: string; keyPoints?: string[] }>
+  analogies?: Array<{ analogy: string; mapsTo: string; limitation?: string }>
   estimatedTime?: number
 } | null {
   try {
@@ -587,6 +588,32 @@ export function parseDeepResponse(content: string, subTopicTitles?: string[]): {
       }
     }
 
+    // Parse analogies with defensive validation
+    let analogies: Array<{ analogy: string; mapsTo: string; limitation?: string }> | undefined
+    if (Array.isArray(data.analogies)) {
+      const filtered = (data.analogies as unknown[])
+        .filter((a: unknown): a is { analogy: string; mapsTo: string; limitation?: string } =>
+          typeof a === 'object' && a !== null
+          && typeof (a as Record<string, unknown>).analogy === 'string'
+          && typeof (a as Record<string, unknown>).mapsTo === 'string'
+          && ((a as Record<string, unknown>).analogy as string).trim() !== ''
+          && ((a as Record<string, unknown>).mapsTo as string).trim() !== ''
+        )
+        .map((a) => {
+          const parsed: { analogy: string; mapsTo: string; limitation?: string } = {
+            analogy: a.analogy.trim(),
+            mapsTo: a.mapsTo.trim(),
+          }
+          if (typeof a.limitation === 'string' && a.limitation.trim() !== '') {
+            parsed.limitation = a.limitation.trim()
+          }
+          return parsed
+        })
+      if (filtered.length > 0) {
+        analogies = filtered
+      }
+    }
+
     return {
       title: data.title,
       description: data.description,
@@ -597,6 +624,7 @@ export function parseDeepResponse(content: string, subTopicTitles?: string[]): {
       commonMistakes: data.commonMistakes,
       keyTerms,
       subTopics,
+      analogies,
       estimatedTime: data.estimatedTime,
     }
   } catch (error) {

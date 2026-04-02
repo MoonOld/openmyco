@@ -101,6 +101,9 @@ ${subTopicTitles.map((t) => `- ${t}`).join('\n')}
   "subTopics": [
     { "title": "子话题标题", "description": "简短描述", "keyPoints": ["要点1", "要点2"] }
   ],
+  "analogies": [
+    { "analogy": "类比描述（用日常生活的例子类比这个知识点）", "mapsTo": "映射到的概念（类比中的哪个部分对应知识点的哪个核心概念）", "limitation": "这个类比的局限性（它不能解释什么）" }
+  ],
   "estimatedTime": 30
 }
 
@@ -113,6 +116,7 @@ ${subTopicTitles.map((t) => `- ${t}`).join('\n')}
 - commonMistakes: 至少2个学习者常犯的错误或误区
 - keyTerms: 3-5个关键术语，每个包含术语名称和简短定义（一句话）；如不适用可返回空数组
 - subTopics: 3-5个子话题，每个包含标题、简短描述和可选要点列表。子话题是当前知识点的**细分方向**（如"React Hooks"的子话题可以是"State Hooks"、"Effect Hooks"），**必须与已有的关联知识节点区分开**，不要把关联节点重复列为子话题。如不适用可返回空数组
+- analogies: 1-2个类比，**优先使用非技术领域的日常类比**（如用"餐厅取餐号"类比 Promise）。每个类比包含：analogy（类比描述）、mapsTo（映射关系）、limitation（类比的局限）。类比必须准确，不能为了有趣牺牲准确性
 - estimatedTime: 预计学习分钟数（整数）
 
 **质量要求**：

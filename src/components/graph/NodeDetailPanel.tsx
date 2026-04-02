@@ -1,7 +1,7 @@
 import { useKnowledgeStore } from '@/stores'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui'
-import { Book, Code, Wrench, Lightbulb, Clock, ArrowRight, ArrowLeft, Minus, MousePointer2, Eye, Target, MessageCircle, GitBranch } from 'lucide-react'
+import { Book, Code, Wrench, Lightbulb, Clock, ArrowRight, ArrowLeft, Minus, MousePointer2, Eye, Target, MessageCircle, GitBranch, Sparkles } from 'lucide-react'
 import { getRelationTypeName } from '@/lib/llm'
 import { cn } from '@/lib/utils'
 import { QAPanel } from './QAPanel'
@@ -141,6 +141,31 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
                           <div key={index} className="text-sm">
                             <span className="font-medium">{kt.term}</span>
                             <span className="text-muted-foreground"> — {kt.definition}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Analogies */}
+                  {selectedNode.analogies && selectedNode.analogies.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-2 flex items-center gap-1.5">
+                        <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                        类比理解
+                      </h4>
+                      <div className="space-y-3">
+                        {selectedNode.analogies.map((a, index) => (
+                          <div key={index} className="rounded-lg border bg-amber-50/50 dark:bg-amber-950/20 p-3">
+                            <p className="text-sm">{a.analogy}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              <span className="font-medium">映射：</span>{a.mapsTo}
+                            </p>
+                            {a.limitation && (
+                              <p className="text-xs text-muted-foreground/70 mt-0.5">
+                                <span className="font-medium">局限：</span>{a.limitation}
+                              </p>
+                            )}
                           </div>
                         ))}
                       </div>

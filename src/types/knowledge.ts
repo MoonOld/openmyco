@@ -41,6 +41,11 @@ export interface KnowledgeNode {
     description: string
     keyPoints?: string[]
   }>
+  analogies?: Array<{
+    analogy: string
+    mapsTo: string
+    limitation?: string
+  }>
   // Q&A history
   qas?: KnowledgeQA[]
 

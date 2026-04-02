@@ -23,4 +23,5 @@ export {
 export { Toast, ToastContainer } from './toast'
 export { Select } from './select'
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs'
+export { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from './accordion'
 export { ResizablePanel } from './ResizablePanel'

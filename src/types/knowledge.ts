@@ -46,6 +46,23 @@ export interface KnowledgeNode {
     mapsTo: string
     limitation?: string
   }>
+  // Layer 2: Advanced deepening (Evaluate + Create)
+  reflectionPrompts?: Array<{
+    question: string
+    level: 'surface' | 'deep' | 'transfer'
+    hint?: string
+  }>
+  challenge?: {
+    title: string
+    description: string
+    difficulty: 'guided' | 'open' | 'extended'
+    requirements: string[]
+    extensions?: string[]
+    suggestedApproach?: string
+  }
+  advancedDeepenStatus?: OperationStatus
+  advancedDeepenError?: string
+
   // Q&A history
   qas?: KnowledgeQA[]
 

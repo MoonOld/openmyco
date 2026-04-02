@@ -5,8 +5,8 @@ import type {
   LLMKnowledgeResponse,
   LLMKnowledgeResponseV2,
 } from '@/types'
-import { parseKnowledgeResponse, parseKnowledgeResponseV2, parseSkeletonResponse, parseDeepResponse, parseQAResponse, extractJSON } from './parsers'
-import type { QAResponse } from './parsers'
+import { parseKnowledgeResponse, parseKnowledgeResponseV2, parseSkeletonResponse, parseDeepResponse, parseQAResponse, parseAdvancedResponse, extractJSON } from './parsers'
+import type { QAResponse, AdvancedResponse } from './parsers'
 import {
   KNOWLEDGE_GRAPH_PROMPT,
   KNOWLEDGE_SKELETON_PROMPT as KNOWLEDGE_SKELETON_PROMPT_FN,
@@ -16,6 +16,7 @@ import {
   NODE_EXPAND_SKELETON_PROMPT,
   NODE_EXPLAIN_PROMPT,
   QA_PROMPT,
+  ADVANCED_PROMPT,
 } from './prompts'
 import pLimit from 'p-limit'
 
@@ -415,6 +416,25 @@ export class LLMClient {
     }
 
     return parseKnowledgeResponse(response)
+  }
+
+  /**
+   * Layer 2: Get advanced deepening content (reflection prompts + challenge)
+   */
+  async getAdvancedDeep(
+    topic: string,
+    description: string,
+    principle?: string
+  ): Promise<AdvancedResponse | null> {
+    const messages: ChatMessage[] = [
+      { role: 'system', content: '你是一个教育设计专家。请始终返回有效的 JSON 格式。' },
+      { role: 'user', content: ADVANCED_PROMPT(topic, description, principle) },
+    ]
+
+    const response = await this.chat(messages)
+    if (!response) return null
+
+    return parseAdvancedResponse(response)
   }
 
   /**

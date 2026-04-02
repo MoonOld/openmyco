@@ -367,6 +367,62 @@ export const QA_PROMPT = (
 }
 
 /**
+ * Prompt for advanced deepening — reflection prompts + challenge (Layer 2)
+ * Triggered by user action: "获取高阶内容" button in "反思与挑战" accordion
+ */
+export const ADVANCED_PROMPT = (
+  topic: string,
+  description: string,
+  principle?: string
+) => `你是一个教育设计专家。请为知识点"${topic}"生成高阶学习内容。
+
+**知识点**：${topic}
+**描述**：${description}
+${principle ? `**核心原理**：${principle}` : ''}
+
+请返回 JSON 格式：
+{
+  "reflectionPrompts": [
+    {
+      "question": "反思问题",
+      "level": "surface|deep|transfer",
+      "hint": "可选提示"
+    }
+  ],
+  "challenge": {
+    "title": "挑战任务标题",
+    "description": "任务描述",
+    "difficulty": "guided|open|extended",
+    "requirements": ["要求1", "要求2"],
+    "extensions": ["可选扩展1"],
+    "suggestedApproach": "建议的完成思路"
+  }
+}
+
+**reflectionPrompts 要求**（3-4 个）：
+- surface: 检验对基本概念的理解（"用自己的话解释..."）
+- deep: 探究底层机制和原理（"为什么...会...？"）
+- transfer: 将知识迁移到新场景（"如果...你会怎么..."）
+- 每个问题必须有教育价值，避免是/否类问题
+- hint 是可选的思考方向提示
+
+**challenge 要求**（1 个）：
+- difficulty:
+  - guided: 有详细步骤引导，适合初学者
+  - open: 给出目标和约束，自主设计路径
+  - extended: 综合性任务，需要多步骤整合
+- requirements: 至少 2 个具体可验证的要求
+- extensions: 可选的进阶挑战（1-2 个）
+- suggestedApproach: 可选的完成思路提示
+
+**质量要求**：
+- 内容必须与"${topic}"紧密相关
+- 反思问题要有深度，不能流于表面
+- 挑战任务要可执行，有明确的验收标准
+
+请为 "${topic}" 生成高阶学习内容。`
+
+/**
  * Get relation type display name in Chinese
  */
 export function getRelationTypeName(type: RelationType): string {

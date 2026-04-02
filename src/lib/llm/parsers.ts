@@ -633,6 +633,132 @@ export function parseDeepResponse(content: string, subTopicTitles?: string[]): {
   }
 }
 
+// ==================== Advanced Deepening Parser (Layer 2) ====================
+
+const VALID_REFLECTION_LEVELS = ['surface', 'deep', 'transfer'] as const
+type ReflectionLevel = typeof VALID_REFLECTION_LEVELS[number]
+
+const VALID_CHALLENGE_DIFFICULTIES = ['guided', 'open', 'extended'] as const
+type ChallengeDifficulty = typeof VALID_CHALLENGE_DIFFICULTIES[number]
+
+export interface ReflectionPrompt {
+  question: string
+  level: ReflectionLevel
+  hint?: string
+}
+
+export interface ChallengeResponse {
+  title: string
+  description: string
+  difficulty: ChallengeDifficulty
+  requirements: string[]
+  extensions?: string[]
+  suggestedApproach?: string
+}
+
+export interface AdvancedResponse {
+  reflectionPrompts?: ReflectionPrompt[]
+  challenge?: ChallengeResponse
+}
+
+/**
+ * Parse advanced deepening response (Layer 2: reflection prompts + challenge)
+ */
+export function parseAdvancedResponse(content: string): AdvancedResponse | null {
+  try {
+    const jsonStr = extractJSON(content)
+    if (!jsonStr) return null
+
+    const data = JSON.parse(jsonStr)
+
+    // Parse reflectionPrompts with defensive validation
+    let reflectionPrompts: ReflectionPrompt[] | undefined
+    if (Array.isArray(data.reflectionPrompts)) {
+      const filtered = (data.reflectionPrompts as unknown[])
+        .filter((rp: unknown): rp is { question: string; level: string; hint?: string } =>
+          typeof rp === 'object' && rp !== null
+          && typeof (rp as Record<string, unknown>).question === 'string'
+          && typeof (rp as Record<string, unknown>).level === 'string'
+          && ((rp as Record<string, unknown>).question as string).trim() !== ''
+          && VALID_REFLECTION_LEVELS.includes((rp as Record<string, unknown>).level as ReflectionLevel)
+        )
+        .map((rp) => {
+          const parsed: ReflectionPrompt = {
+            question: ((rp as Record<string, unknown>).question as string).trim(),
+            level: (rp as Record<string, unknown>).level as ReflectionLevel,
+          }
+          if (typeof (rp as Record<string, unknown>).hint === 'string'
+            && ((rp as Record<string, unknown>).hint as string).trim() !== '') {
+            parsed.hint = ((rp as Record<string, unknown>).hint as string).trim()
+          }
+          return parsed
+        })
+      if (filtered.length > 0) {
+        reflectionPrompts = filtered
+      }
+    }
+
+    // Parse challenge with defensive validation
+    let challenge: ChallengeResponse | undefined
+    if (data.challenge && typeof data.challenge === 'object' && !Array.isArray(data.challenge)) {
+      const c = data.challenge as Record<string, unknown>
+      const title = typeof c.title === 'string' ? (c.title as string).trim() : ''
+      const description = typeof c.description === 'string' ? (c.description as string).trim() : ''
+
+      if (title !== '' && description !== '') {
+        // Parse requirements
+        let requirements: string[] = []
+        if (Array.isArray(c.requirements)) {
+          requirements = (c.requirements as unknown[])
+            .filter((r: unknown): r is string => typeof r === 'string' && r.trim() !== '')
+            .map((r) => r.trim())
+        }
+
+        if (requirements.length > 0) {
+          // Validate difficulty (fallback to 'open')
+          const difficulty = VALID_CHALLENGE_DIFFICULTIES.includes(c.difficulty as ChallengeDifficulty)
+            ? c.difficulty as ChallengeDifficulty
+            : 'open'
+
+          // Parse extensions
+          let extensions: string[] | undefined
+          if (Array.isArray(c.extensions)) {
+            const filtered = (c.extensions as unknown[])
+              .filter((e: unknown): e is string => typeof e === 'string' && e.trim() !== '')
+              .map((e) => e.trim())
+            if (filtered.length > 0) {
+              extensions = filtered
+            }
+          }
+
+          // Parse suggestedApproach
+          let suggestedApproach: string | undefined
+          if (typeof c.suggestedApproach === 'string' && (c.suggestedApproach as string).trim() !== '') {
+            suggestedApproach = (c.suggestedApproach as string).trim()
+          }
+
+          challenge = {
+            title,
+            description,
+            difficulty,
+            requirements,
+            ...(extensions && { extensions }),
+            ...(suggestedApproach && { suggestedApproach }),
+          }
+        }
+      }
+    }
+
+    return {
+      reflectionPrompts,
+      challenge,
+    }
+  } catch (error) {
+    console.error('[parseAdvancedResponse] Failed to parse:', error)
+    return null
+  }
+}
+
 // ==================== QA Response Parser ====================
 
 const VALID_QA_ACTIONS: QAActionType[] = ['save_only', 'merge_to_field', 'generate_subtopic', 'upgrade_to_node']

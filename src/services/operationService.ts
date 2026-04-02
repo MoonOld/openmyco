@@ -765,6 +765,120 @@ export async function expandNode(nodeId: string): Promise<OperationResult> {
 }
 
 /**
+ * 高阶深化节点（Layer 2: reflection prompts + challenge）
+ * 用户主动触发，简单状态管理（不用 CAS 锁）
+ */
+export async function advancedDeepen(nodeId: string): Promise<OperationResult> {
+  const store = useKnowledgeStore.getState()
+  const graph = store.currentGraph
+
+  if (!graph || !graph.nodes.has(nodeId)) {
+    return {
+      success: false,
+      operationId: '',
+      graphId: '',
+      error: '节点不存在',
+      wasCurrentGraph: false,
+    }
+  }
+
+  const node = graph.nodes.get(nodeId)!
+
+  // 前置条件：需要完成基础深化
+  if (node.deepenStatus !== 'success') {
+    return {
+      success: false,
+      operationId: '',
+      graphId: graph.id,
+      error: '请先完成基础深化',
+      wasCurrentGraph: true,
+    }
+  }
+
+  // 防止重复请求
+  if (node.advancedDeepenStatus === 'pending') {
+    return {
+      success: false,
+      operationId: '',
+      graphId: graph.id,
+      error: '正在获取高阶内容',
+      wasCurrentGraph: true,
+    }
+  }
+
+  const graphId = graph.id
+
+  // 设置 loading 状态
+  await useKnowledgeStore.getState().updateGraphById(graphId, {
+    rootNodeId: nodeId,
+    rootNodeUpdates: {
+      advancedDeepenStatus: 'pending',
+      advancedDeepenError: undefined,
+    },
+    mutationType: 'meta',
+  })
+
+  try {
+    const { llmConfig } = useSettingsStore.getState()
+    if (!llmConfig.apiKey) {
+      throw new Error('请先配置 API Key')
+    }
+
+    const client = createLLMClient(llmConfig)
+    const result = await client.getAdvancedDeep(
+      node.title,
+      node.description,
+      node.principle
+    )
+
+    if (!result) {
+      throw new Error('LLM 未返回高阶内容')
+    }
+
+    // 写入结果
+    const rootNodeUpdates: Partial<KnowledgeNode> = {
+      advancedDeepenStatus: 'success' as const,
+      advancedDeepenError: undefined,
+      ...(result.reflectionPrompts && { reflectionPrompts: result.reflectionPrompts }),
+      ...(result.challenge && { challenge: result.challenge }),
+    }
+
+    await useKnowledgeStore.getState().updateGraphById(graphId, {
+      rootNodeId: nodeId,
+      rootNodeUpdates,
+      mutationType: 'content',
+    })
+
+    return {
+      success: true,
+      operationId: '',
+      graphId,
+      graphName: graph.name,
+      wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : '获取高阶内容失败'
+
+    await useKnowledgeStore.getState().updateGraphById(graphId, {
+      rootNodeId: nodeId,
+      rootNodeUpdates: {
+        advancedDeepenStatus: 'failed',
+        advancedDeepenError: errorMessage,
+      },
+      mutationType: 'meta',
+    })
+
+    return {
+      success: false,
+      operationId: '',
+      graphId,
+      error: errorMessage,
+      wasCurrentGraph: useKnowledgeStore.getState().currentGraph?.id === graphId,
+    }
+  }
+}
+
+/**
  * 恢复未完成的操作（页面加载时调用）
  * 从 IndexedDB 读取所有图谱，检查 pending 节点
  */
@@ -779,6 +893,7 @@ export async function resumePendingOperations(): Promise<void> {
     const graph = storedToRuntime(stored)
     const pendingNodes = Array.from(graph.nodes.values()).filter(
       (node) => node.expandStatus === 'pending' || node.deepenStatus === 'pending'
+        || node.advancedDeepenStatus === 'pending'
         || node.operationStatus === 'pending'  // 兼容旧数据
     )
 
@@ -798,6 +913,10 @@ export async function resumePendingOperations(): Promise<void> {
         updates.deepenStatus = 'failed'
         updates.deepenError = '操作中断，请点击重试'
         updates.activeDeepenOpId = undefined
+      }
+      if (node.advancedDeepenStatus === 'pending') {
+        updates.advancedDeepenStatus = 'failed'
+        updates.advancedDeepenError = '操作中断，请点击重试'
       }
       await useKnowledgeStore.getState().updateGraphById(graph.id, {
         rootNodeId: node.id,

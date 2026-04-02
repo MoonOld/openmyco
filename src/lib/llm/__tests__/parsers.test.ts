@@ -9,6 +9,7 @@ import {
   parseDeepResponse,
   parseSkeletonResponse,
   parseQAResponse,
+  parseAdvancedResponse,
 } from '../parsers'
 import type { RelationType, LLMKnowledgeResponse } from '@/types'
 
@@ -963,5 +964,386 @@ describe('parseDeepResponse - analogies', () => {
     const result = parseDeepResponse(content)
     expect(result).not.toBeNull()
     expect(result?.analogies?.[0]?.limitation).toBeUndefined()
+  })
+})
+
+// ==================== parseAdvancedResponse (Layer 2) ====================
+
+describe('parseAdvancedResponse - reflectionPrompts', () => {
+  it('should parse valid reflectionPrompts with all fields', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: [
+        { question: '用自己的话解释什么是闭包', level: 'surface', hint: '想想函数和变量的关系' },
+        { question: '为什么闭包能记住外部变量？', level: 'deep' },
+        { question: '如何用闭包实现一个私有计数器？', level: 'transfer', hint: '想想模块模式' },
+      ],
+      challenge: {
+        title: 'Build a cache',
+        description: 'Implement a memoization function',
+        difficulty: 'guided',
+        requirements: ['Support any function', 'Handle edge cases'],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toHaveLength(3)
+    expect(result?.reflectionPrompts?.[0]).toEqual({
+      question: '用自己的话解释什么是闭包',
+      level: 'surface',
+      hint: '想想函数和变量的关系',
+    })
+    expect(result?.reflectionPrompts?.[1]?.hint).toBeUndefined()
+    expect(result?.reflectionPrompts?.[2]?.level).toBe('transfer')
+  })
+
+  it('should parse reflectionPrompts without hint', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: [
+        { question: 'Why does this work?', level: 'deep' },
+      ],
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toHaveLength(1)
+    expect(result?.reflectionPrompts?.[0]?.hint).toBeUndefined()
+  })
+
+  it('should filter out entries with empty question', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: [
+        { question: 'valid question', level: 'surface' },
+        { question: '', level: 'deep' },
+        { question: '   ', level: 'transfer' },
+      ],
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toHaveLength(1)
+    expect(result?.reflectionPrompts?.[0]?.question).toBe('valid question')
+  })
+
+  it('should filter out entries with invalid level', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: [
+        { question: 'valid', level: 'surface' },
+        { question: 'invalid level', level: 'advanced' },
+        { question: 'no level' },
+      ],
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toHaveLength(1)
+  })
+
+  it('should filter out non-object entries', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: ['string', 123, null, { question: 'valid', level: 'deep' }],
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toHaveLength(1)
+    expect(result?.reflectionPrompts?.[0]?.question).toBe('valid')
+  })
+
+  it('should return undefined when all entries filtered out', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: [
+        { question: '', level: 'surface' },
+        { question: 'valid', level: 'invalid' },
+      ],
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toBeUndefined()
+  })
+
+  it('should return undefined when reflectionPrompts not present', () => {
+    const content = JSON.stringify({ challenge: { title: 'T', description: 'D', difficulty: 'open', requirements: ['R'] } })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toBeUndefined()
+  })
+
+  it('should return undefined when reflectionPrompts is not an array', () => {
+    const content = JSON.stringify({ reflectionPrompts: 'not an array' })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toBeUndefined()
+  })
+
+  it('should trim whitespace from question and hint', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: [
+        { question: '  Why?  ', level: 'surface', hint: '  think about it  ' },
+      ],
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts?.[0]).toEqual({
+      question: 'Why?',
+      level: 'surface',
+      hint: 'think about it',
+    })
+  })
+})
+
+describe('parseAdvancedResponse - challenge', () => {
+  it('should parse valid challenge with all fields', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: 'Build a Promise',
+        description: 'Implement a basic Promise from scratch',
+        difficulty: 'extended',
+        requirements: ['Support then/catch', 'Handle async resolution'],
+        extensions: ['Add finally method', 'Support Promise.all'],
+        suggestedApproach: 'Start with the state machine pattern',
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge).toEqual({
+      title: 'Build a Promise',
+      description: 'Implement a basic Promise from scratch',
+      difficulty: 'extended',
+      requirements: ['Support then/catch', 'Handle async resolution'],
+      extensions: ['Add finally method', 'Support Promise.all'],
+      suggestedApproach: 'Start with the state machine pattern',
+    })
+  })
+
+  it('should parse challenge without extensions and suggestedApproach', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: 'Simple Task',
+        description: 'A simple task',
+        difficulty: 'guided',
+        requirements: ['Do A', 'Do B'],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge?.title).toBe('Simple Task')
+    expect(result?.challenge?.extensions).toBeUndefined()
+    expect(result?.challenge?.suggestedApproach).toBeUndefined()
+  })
+
+  it('should discard challenge when title is empty', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: '',
+        description: 'A task',
+        difficulty: 'open',
+        requirements: ['R1'],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge).toBeUndefined()
+  })
+
+  it('should discard challenge when description is empty', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: 'Task',
+        description: '   ',
+        difficulty: 'open',
+        requirements: ['R1'],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge).toBeUndefined()
+  })
+
+  it('should fallback difficulty to open when invalid', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: 'Task',
+        description: 'Description',
+        difficulty: 'super_hard',
+        requirements: ['R1'],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge?.difficulty).toBe('open')
+  })
+
+  it('should discard challenge when all requirements are empty', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: 'Task',
+        description: 'Description',
+        difficulty: 'guided',
+        requirements: ['', '  '],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge).toBeUndefined()
+  })
+
+  it('should filter empty strings from requirements', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: 'Task',
+        description: 'Description',
+        difficulty: 'guided',
+        requirements: ['valid', '', '  ', 'also valid'],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge?.requirements).toEqual(['valid', 'also valid'])
+  })
+
+  it('should filter empty strings from extensions', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: 'Task',
+        description: 'Description',
+        difficulty: 'guided',
+        requirements: ['R1'],
+        extensions: ['valid ext', '', '  '],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge?.extensions).toEqual(['valid ext'])
+  })
+
+  it('should return undefined extensions when all filtered out', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: 'Task',
+        description: 'Description',
+        difficulty: 'guided',
+        requirements: ['R1'],
+        extensions: ['', '  '],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge?.extensions).toBeUndefined()
+  })
+
+  it('should return undefined challenge when not present', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: [{ question: 'Q', level: 'surface' }],
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge).toBeUndefined()
+  })
+
+  it('should return undefined challenge when challenge is not an object', () => {
+    const content = JSON.stringify({
+      challenge: 'not an object',
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.challenge).toBeUndefined()
+  })
+})
+
+describe('parseAdvancedResponse - overall', () => {
+  it('should parse response with both reflectionPrompts and challenge', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: [
+        { question: 'Explain closures', level: 'surface', hint: 'Think about scope' },
+        { question: 'Why do closures work?', level: 'deep' },
+      ],
+      challenge: {
+        title: 'Build a cache',
+        description: 'Implement memoization',
+        difficulty: 'guided',
+        requirements: ['Support any function', 'Handle edge cases'],
+        suggestedApproach: 'Use a closure-based approach',
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toHaveLength(2)
+    expect(result?.challenge?.title).toBe('Build a cache')
+  })
+
+  it('should parse response with neither field', () => {
+    const content = JSON.stringify({})
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toBeUndefined()
+    expect(result?.challenge).toBeUndefined()
+  })
+
+  it('should parse response with only reflectionPrompts', () => {
+    const content = JSON.stringify({
+      reflectionPrompts: [{ question: 'Q', level: 'surface' }],
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toHaveLength(1)
+    expect(result?.challenge).toBeUndefined()
+  })
+
+  it('should parse response with only challenge', () => {
+    const content = JSON.stringify({
+      challenge: {
+        title: 'T',
+        description: 'D',
+        difficulty: 'open',
+        requirements: ['R'],
+      },
+    })
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toBeUndefined()
+    expect(result?.challenge?.title).toBe('T')
+  })
+
+  it('should return null for non-JSON content', () => {
+    const result = parseAdvancedResponse('not valid json at all')
+    expect(result).toBeNull()
+  })
+
+  it('should parse response wrapped in code fence', () => {
+    const data = {
+      reflectionPrompts: [{ question: 'Q', level: 'surface' }],
+      challenge: {
+        title: 'T',
+        description: 'D',
+        difficulty: 'guided',
+        requirements: ['R'],
+      },
+    }
+    const content = '```json\n' + JSON.stringify(data) + '\n```'
+
+    const result = parseAdvancedResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.reflectionPrompts).toHaveLength(1)
+    expect(result?.challenge?.title).toBe('T')
   })
 })

@@ -1,10 +1,13 @@
+import { useState } from 'react'
 import { useKnowledgeStore } from '@/stores'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui'
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui'
-import { Book, Code, Wrench, Lightbulb, Clock, ArrowRight, ArrowLeft, Minus, MousePointer2, Eye, Target, MessageCircle, GitBranch, Sparkles } from 'lucide-react'
+import { Book, Code, Wrench, Lightbulb, Clock, ArrowRight, ArrowLeft, Minus, MousePointer2, Eye, Target, MessageCircle, GitBranch, Sparkles, Brain, Loader2, AlertCircle, Trophy } from 'lucide-react'
 import { getRelationTypeName } from '@/lib/llm'
 import { cn } from '@/lib/utils'
 import { QAPanel } from './QAPanel'
+import { advancedDeepen } from '@/services/operationService'
+import type { KnowledgeNode } from '@/types'
 
 const typeIcons = {
   concept: Lightbulb,
@@ -401,6 +404,19 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
               </AccordionContent>
             </AccordionItem>
 
+            {/* 反思与挑战面板 — Evaluate + Create (Layer 2) */}
+            <AccordionItem value="advanced">
+              <AccordionTrigger>
+                <span className="flex items-center gap-2">
+                  <Brain className="h-4 w-4" />
+                  反思与挑战
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                <AdvancedSection node={selectedNode} />
+              </AccordionContent>
+            </AccordionItem>
+
             {/* 探索面板 */}
             <AccordionItem value="explore">
               <AccordionTrigger>
@@ -416,6 +432,204 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
           </Accordion>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// ==================== 反思与挑战子组件 ====================
+
+const levelLabels: Record<string, { label: string; color: string }> = {
+  surface: { label: '表面理解', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
+  deep: { label: '深层机制', color: 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300' },
+  transfer: { label: '跨域迁移', color: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' },
+}
+
+const difficultyLabels: Record<string, { label: string; color: string }> = {
+  guided: { label: '引导式', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' },
+  open: { label: '开放式', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' },
+  extended: { label: '拓展式', color: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300' },
+}
+
+function AdvancedSection({ node }: { node: KnowledgeNode }) {
+  const [loading, setLoading] = useState(false)
+
+  const status = node.advancedDeepenStatus
+  const error = node.advancedDeepenError
+  const hasData = !!(node.reflectionPrompts?.length || node.challenge)
+  const isDeepened = node.deepenStatus === 'success'
+
+  const handleFetch = async () => {
+    setLoading(true)
+    await advancedDeepen(node.id)
+    setLoading(false)
+  }
+
+  // 前置条件不满足
+  if (!isDeepened) {
+    return (
+      <div className="text-sm text-muted-foreground text-center py-4">
+        请先完成基础深化后再获取高阶内容
+      </div>
+    )
+  }
+
+  // Loading 状态
+  if (status === 'pending' || loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" />
+        正在获取高阶内容...
+      </div>
+    )
+  }
+
+  // Error 状态
+  if (status === 'failed') {
+    return (
+      <div className="space-y-3 py-2">
+        <div className="flex items-center gap-2 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <span>{error || '获取高阶内容失败'}</span>
+        </div>
+        <button
+          onClick={handleFetch}
+          className="w-full px-3 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          重试
+        </button>
+      </div>
+    )
+  }
+
+  // 成功但无数据
+  if (status === 'success' && !hasData) {
+    return (
+      <div className="space-y-3 py-2">
+        <p className="text-sm text-muted-foreground">未获取到有效的高阶内容</p>
+        <button
+          onClick={handleFetch}
+          className="w-full px-3 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+        >
+          重试
+        </button>
+      </div>
+    )
+  }
+
+  // 有数据 — 展示
+  if (hasData) {
+    return (
+      <div className="space-y-5">
+        {/* 反思引导 */}
+        {node.reflectionPrompts && node.reflectionPrompts.length > 0 && (
+          <div>
+            <h4 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+              <Brain className="h-3.5 w-3.5 text-purple-500" />
+              反思引导
+            </h4>
+            <div className="space-y-3">
+              {node.reflectionPrompts.map((rp, index) => {
+                const levelInfo = levelLabels[rp.level] || levelLabels.surface
+                return (
+                  <div key={index} className="rounded-lg border bg-muted/30 p-3">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className={cn('px-2 py-0.5 text-xs rounded-full', levelInfo.color)}>
+                        {levelInfo.label}
+                      </span>
+                    </div>
+                    <p className="text-sm">{rp.question}</p>
+                    {rp.hint && (
+                      <p className="text-xs text-muted-foreground mt-1.5">
+                        <span className="font-medium">提示：</span>{rp.hint}
+                      </p>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* 挑战任务 */}
+        {node.challenge && (() => {
+          const ch = node.challenge
+          const diffInfo = difficultyLabels[ch.difficulty] || difficultyLabels.open
+          return (
+            <div>
+              <h4 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+                <Trophy className="h-3.5 w-3.5 text-amber-500" />
+                挑战任务
+              </h4>
+              <div className="rounded-lg border bg-amber-50/50 dark:bg-amber-950/20 p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm">{ch.title}</span>
+                  <span className={cn('px-2 py-0.5 text-xs rounded-full', diffInfo.color)}>
+                    {diffInfo.label}
+                  </span>
+                </div>
+                <p className="text-sm text-muted-foreground">{ch.description}</p>
+
+                {ch.requirements.length > 0 && (
+                  <div>
+                    <h5 className="text-xs font-medium text-muted-foreground mb-1.5">要求</h5>
+                    <ul className="space-y-1">
+                      {ch.requirements.map((req, i) => (
+                        <li key={i} className="text-sm flex items-start gap-2">
+                          <span className="text-amber-500 mt-0.5 shrink-0">•</span>
+                          <span>{req}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {ch.extensions && ch.extensions.length > 0 && (
+                  <div>
+                    <h5 className="text-xs font-medium text-muted-foreground mb-1.5">扩展挑战</h5>
+                    <ul className="space-y-1">
+                      {ch.extensions.map((ext, i) => (
+                        <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                          <span className="text-amber-400 mt-0.5 shrink-0">+</span>
+                          <span>{ext}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {ch.suggestedApproach && (
+                  <div>
+                    <h5 className="text-xs font-medium text-muted-foreground mb-1.5">建议思路</h5>
+                    <p className="text-sm text-muted-foreground">{ch.suggestedApproach}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        <button
+          onClick={handleFetch}
+          className="w-full px-3 py-2 text-xs rounded-md border hover:bg-muted transition-colors text-muted-foreground"
+        >
+          重新获取高阶内容
+        </button>
+      </div>
+    )
+  }
+
+  // 默认：未获取状态
+  return (
+    <div className="py-2">
+      <button
+        onClick={handleFetch}
+        className="w-full px-3 py-2.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+      >
+        获取高阶内容
+      </button>
+      <p className="text-xs text-muted-foreground text-center mt-2">
+        获取反思引导和实践挑战
+      </p>
     </div>
   )
 }

@@ -239,6 +239,7 @@ export class LLMClient {
     commonMistakes?: string[]
     keyTerms?: Array<{ term: string; definition: string }>
     subTopics?: Array<{ title: string; description: string; keyPoints?: string[] }>
+    analogies?: Array<{ analogy: string; mapsTo: string; limitation?: string }>
     estimatedTime?: number
   } | null> {
     const messages: ChatMessage[] = [

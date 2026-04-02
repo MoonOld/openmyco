@@ -293,6 +293,62 @@ describe('NodeDetailPanel', () => {
       render(<NodeDetailPanel />)
       expect(screen.queryByText('子话题')).not.toBeInTheDocument()
     })
+
+    it('should display analogies in "认识" panel', () => {
+      const node = createMockNode({
+        analogies: [
+          { analogy: 'Promise 就像餐厅取餐号', mapsTo: '号码牌对应 Promise', limitation: '只能 resolve 一次' },
+        ],
+      })
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.getByText('类比理解')).toBeInTheDocument()
+      expect(screen.getByText('Promise 就像餐厅取餐号')).toBeInTheDocument()
+      expect(screen.getByText(/号码牌对应 Promise/)).toBeInTheDocument()
+      expect(screen.getByText(/只能 resolve 一次/)).toBeInTheDocument()
+    })
+
+    it('should display analogies without limitation', () => {
+      const node = createMockNode({
+        analogies: [
+          { analogy: 'A is like B', mapsTo: 'B maps to A' },
+        ],
+      })
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.getByText('A is like B')).toBeInTheDocument()
+      expect(screen.getByText(/B maps to A/)).toBeInTheDocument()
+      // Should not show 局限 label when no limitation
+      expect(screen.queryByText(/局限：/)).not.toBeInTheDocument()
+    })
+
+    it('should not show analogies section when analogies is empty', () => {
+      const node = createMockNode()
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.queryByText('类比理解')).not.toBeInTheDocument()
+    })
+
+    it('should display multiple analogies', () => {
+      const node = createMockNode({
+        analogies: [
+          { analogy: 'First analogy', mapsTo: 'First mapping' },
+          { analogy: 'Second analogy', mapsTo: 'Second mapping' },
+        ],
+      })
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      expect(screen.getByText('First analogy')).toBeInTheDocument()
+      expect(screen.getByText('Second analogy')).toBeInTheDocument()
+    })
   })
 
   describe('explore panel', () => {

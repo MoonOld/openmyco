@@ -816,3 +816,152 @@ describe('parseQAResponse', () => {
     expect(result).toBeNull()
   })
 })
+
+describe('parseDeepResponse - analogies', () => {
+  it('should parse analogies with valid entries', () => {
+    const content = JSON.stringify({
+      title: 'Promise',
+      description: 'Promise is a proxy for a value not necessarily known when created.',
+      principle: 'A Promise represents the eventual completion or failure of an async operation.',
+      analogies: [
+        { analogy: 'Promise 就像餐厅的取餐号码牌', mapsTo: '号码牌对应 Promise 对象，取餐对应 resolve', limitation: 'Promise 只能 resolve 一次，但取餐号码可以多次叫号' },
+        { analogy: 'Promise 就像网购的订单号', mapsTo: '订单号对应 Promise，收到快递对应 resolve', limitation: '网购可以退货退款，Promise 结果不可撤回' },
+      ],
+      estimatedTime: 30,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.analogies).toHaveLength(2)
+    expect(result?.analogies?.[0]).toEqual({
+      analogy: 'Promise 就像餐厅的取餐号码牌',
+      mapsTo: '号码牌对应 Promise 对象，取餐对应 resolve',
+      limitation: 'Promise 只能 resolve 一次，但取餐号码可以多次叫号',
+    })
+    expect(result?.analogies?.[1]?.limitation).toBe('网购可以退货退款，Promise 结果不可撤回')
+  })
+
+  it('should parse analogies without limitation', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      analogies: [
+        { analogy: 'A is like B', mapsTo: 'B maps to A' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.analogies).toHaveLength(1)
+    expect(result?.analogies?.[0]?.limitation).toBeUndefined()
+  })
+
+  it('should filter out analogies with empty analogy or mapsTo', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      analogies: [
+        { analogy: 'valid analogy', mapsTo: 'valid mapping' },
+        { analogy: '', mapsTo: 'empty analogy' },
+        { analogy: 'empty mapsTo', mapsTo: '' },
+        { analogy: '   ', mapsTo: 'whitespace analogy' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.analogies).toHaveLength(1)
+    expect(result?.analogies?.[0]?.analogy).toBe('valid analogy')
+  })
+
+  it('should return undefined analogies when not present in response', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      principle: 'Some principle',
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.analogies).toBeUndefined()
+  })
+
+  it('should return undefined analogies when analogies is empty array after filtering', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      analogies: [
+        { analogy: '', mapsTo: '' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.analogies).toBeUndefined()
+  })
+
+  it('should handle analogies being a non-array value gracefully', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      analogies: 'not an array',
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.analogies).toBeUndefined()
+  })
+
+  it('should handle analogies with non-object entries', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      analogies: ['string entry', 123, null, { analogy: 'valid', mapsTo: 'valid map' }],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.analogies).toHaveLength(1)
+    expect(result?.analogies?.[0]?.analogy).toBe('valid')
+  })
+
+  it('should trim whitespace from analogy, mapsTo, and limitation', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      analogies: [
+        { analogy: '  A is like B  ', mapsTo: '  B maps to A  ', limitation: '  some limit  ' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.analogies?.[0]).toEqual({
+      analogy: 'A is like B',
+      mapsTo: 'B maps to A',
+      limitation: 'some limit',
+    })
+  })
+
+  it('should omit limitation when it is empty string after trim', () => {
+    const content = JSON.stringify({
+      title: 'Test',
+      description: 'Desc',
+      analogies: [
+        { analogy: 'valid', mapsTo: 'valid', limitation: '   ' },
+      ],
+      estimatedTime: 10,
+    })
+
+    const result = parseDeepResponse(content)
+    expect(result).not.toBeNull()
+    expect(result?.analogies?.[0]?.limitation).toBeUndefined()
+  })
+})

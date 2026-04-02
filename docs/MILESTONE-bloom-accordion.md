@@ -126,7 +126,7 @@ advancedDeepenError?: string
 | 重写 NodeDetailPanel (Tabs→Accordion) | `src/components/graph/NodeDetailPanel.tsx` |
 | 适配测试 | `src/components/graph/__tests__/NodeDetailPanel.test.tsx` |
 
-### PR-2: Layer 1 — analogies 类比字段全链路
+### PR-2: Layer 1 — analogies 类比字段全链路 ✅ ✅
 
 > **目标**: 深化时获取类比内容，"认识"面板展示
 > **验证**: 深化节点后，"认识"面板出现类比区域

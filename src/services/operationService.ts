@@ -640,6 +640,7 @@ export async function deepenOnly(nodeId: string, options?: { force?: boolean }):
         ...(deepInfo.commonMistakes && { commonMistakes: deepInfo.commonMistakes }),
         ...(deepInfo.keyTerms && { keyTerms: deepInfo.keyTerms }),
         ...(deepInfo.subTopics && { subTopics: deepInfo.subTopics }),
+        ...(deepInfo.analogies && { analogies: deepInfo.analogies }),
       })
     }
 

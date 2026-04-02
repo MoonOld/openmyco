@@ -107,6 +107,14 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
                     <p className="text-sm text-muted-foreground">{selectedNode.description}</p>
                   </div>
 
+                  {/* Time estimate */}
+                  {selectedNode.estimatedTime && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      <span>预计学习时间：约 {selectedNode.estimatedTime} 分钟</span>
+                    </div>
+                  )}
+
                   {/* Tags */}
                   {selectedNode.tags && selectedNode.tags.length > 0 && (
                     <div>
@@ -288,19 +296,10 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
                 </span>
               </AccordionTrigger>
               <AccordionContent>
-                <div className="space-y-4">
-                  {/* Time estimate */}
-                  {selectedNode.estimatedTime && (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Clock className="h-4 w-4" />
-                      <span>预计学习时间：约 {selectedNode.estimatedTime} 分钟</span>
-                    </div>
-                  )}
-
-                  {hasRelations ? (
-                    <>
-                      {/* Incoming relations */}
-                      {incomingEdges.length > 0 && (
+                {hasRelations ? (
+                  <div className="space-y-4">
+                    {/* Incoming relations */}
+                    {incomingEdges.length > 0 && (
                       <div>
                         <h4 className="text-sm font-medium mb-2">前置关系</h4>
                         <div className="space-y-2">
@@ -370,11 +369,10 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
                         </div>
                       </div>
                     )}
-                    </>
-                  ) : !selectedNode.estimatedTime ? (
-                    <EmptyState message="暂无关联知识点" />
-                  ) : null}
-                </div>
+                  </div>
+                ) : (
+                  <EmptyState message="暂无关联知识点" />
+                )}
               </AccordionContent>
             </AccordionItem>
 

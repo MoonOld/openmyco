@@ -136,10 +136,6 @@ describe('NodeDetailPanel', () => {
     })
 
     it('should show empty state in "关系" panel when no relations', () => {
-      const node = createMockNode({ estimatedTime: undefined })
-      mockCurrentGraph = createMockGraph([node])
-      mockSelectedNodeId = 'node-1'
-
       render(<NodeDetailPanel />)
       fireEvent.click(screen.getByText('关系'))
       expect(screen.getByText('暂无关联知识点')).toBeInTheDocument()
@@ -365,13 +361,13 @@ describe('NodeDetailPanel', () => {
       expect(screen.getByText('JavaScript')).toBeInTheDocument()
     })
 
-    it('should display estimated time in "关系" panel', () => {
+    it('should display estimated time in "认识" panel', () => {
       const node = createMockNode({ estimatedTime: 30 })
       mockCurrentGraph = createMockGraph([node])
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByText('关系'))
+      // "认识" panel is expanded by default
       expect(screen.getByText(/约 30 分钟/)).toBeInTheDocument()
     })
 

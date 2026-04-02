@@ -43,7 +43,7 @@ export function ChatInterface() {
           onWidthChange={setDetailPanelWidth}
           onToggle={toggleDetailPanel}
           minWidth={280}
-          maxWidth={500}
+          maxWidth={800}
           side="right"
           className="h-full"
         >

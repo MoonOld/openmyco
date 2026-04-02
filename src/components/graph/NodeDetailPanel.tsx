@@ -1,7 +1,7 @@
 import { useKnowledgeStore } from '@/stores'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui'
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui'
-import { Book, Code, Wrench, Lightbulb, Clock, ArrowRight, ArrowLeft, Minus, MousePointer2, Eye, Beaker, Target, MessageCircle } from 'lucide-react'
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui'
+import { Book, Code, Wrench, Lightbulb, Clock, ArrowRight, ArrowLeft, Minus, MousePointer2, Eye, Target, MessageCircle, GitBranch } from 'lucide-react'
 import { getRelationTypeName } from '@/lib/llm'
 import { cn } from '@/lib/utils'
 import { QAPanel } from './QAPanel'
@@ -71,6 +71,7 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
   const hasPrinciple = !!selectedNode.principle
   const hasExamples = !!(selectedNode.examples?.length || selectedNode.useCases?.length)
   const hasPractices = !!(selectedNode.bestPractices?.length || selectedNode.commonMistakes?.length)
+  const hasRelations = incomingEdges.length > 0 || outgoingEdges.length > 0
 
   return (
     <div className={className}>
@@ -89,288 +90,305 @@ export function NodeDetailPanel({ className }: NodeDetailPanelProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="overview">
-            <TabsList>
-              <TabsTrigger value="overview">
-                <Eye className="h-3.5 w-3.5 mr-1.5" />
-                概览
-              </TabsTrigger>
-              <TabsTrigger value="principle">
-                <Lightbulb className="h-3.5 w-3.5 mr-1.5" />
-                原理
-              </TabsTrigger>
-              <TabsTrigger value="examples">
-                <Beaker className="h-3.5 w-3.5 mr-1.5" />
-                示例
-              </TabsTrigger>
-              <TabsTrigger value="practices">
-                <Target className="h-3.5 w-3.5 mr-1.5" />
-                实践
-              </TabsTrigger>
-              <TabsTrigger value="qa">
-                <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
-                问答
-              </TabsTrigger>
-            </TabsList>
-
-            {/* 概览 Tab */}
-            <TabsContent value="overview">
-              <div className="space-y-4">
-                {/* Description */}
-                <div>
-                  <h4 className="text-sm font-medium mb-2">描述</h4>
-                  <p className="text-sm text-muted-foreground">{selectedNode.description}</p>
-                </div>
-
-                {/* Time estimate */}
-                {selectedNode.estimatedTime && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    <span>预计学习时间：约 {selectedNode.estimatedTime} 分钟</span>
-                  </div>
-                )}
-
-                {/* Tags */}
-                {selectedNode.tags && selectedNode.tags.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">标签</h4>
-                    <div className="flex flex-wrap gap-2">
-                      {selectedNode.tags.map((tag, index) => (
-                        <span
-                          key={index}
-                          className="px-2 py-1 text-xs rounded-full bg-secondary text-secondary-foreground"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Key Terms */}
-                {selectedNode.keyTerms && selectedNode.keyTerms.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">关键术语</h4>
-                    <div className="space-y-2">
-                      {selectedNode.keyTerms.map((kt, index) => (
-                        <div key={index} className="text-sm">
-                          <span className="font-medium">{kt.term}</span>
-                          <span className="text-muted-foreground"> — {kt.definition}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Sub Topics */}
-                {selectedNode.subTopics && selectedNode.subTopics.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">子话题</h4>
-                    <div className="space-y-2">
-                      {selectedNode.subTopics.map((st, index) => (
-                        <div key={index} className="rounded-lg border bg-muted/30 p-3">
-                          <h5 className="text-sm font-medium">{st.title}</h5>
-                          <p className="text-sm text-muted-foreground mt-0.5">{st.description}</p>
-                          {st.keyPoints && st.keyPoints.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                              {st.keyPoints.map((kp, kpIndex) => (
-                                <span
-                                  key={kpIndex}
-                                  className="px-2 py-0.5 text-xs rounded-full bg-secondary text-secondary-foreground"
-                                >
-                                  {kp}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Incoming relations */}
-                {incomingEdges.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">前置关系</h4>
-                    <div className="space-y-2">
-                      {incomingEdges.map((edge) => {
-                        const relationInfo = relationIcons[edge.type] || defaultRelationInfo
-                        const RelationIcon = relationInfo.icon
-                        const sourceNode = currentGraph?.nodes.get(edge.source)
-
-                        return (
-                          <div
-                            key={edge.id}
-                            onClick={() => sourceNode && handleRelationNodeClick(sourceNode.id)}
-                            className={cn(
-                              "flex items-center gap-2 text-sm p-2 rounded bg-muted/50",
-                              sourceNode && "cursor-pointer hover:bg-muted transition-colors group"
-                            )}
-                          >
-                            <RelationIcon className={`h-4 w-4 ${relationInfo.color}`} />
-                            <span className="text-muted-foreground group-hover:text-foreground transition-colors">
-                              {sourceNode?.title || edge.source}
-                            </span>
-                            <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-background">
-                              {getRelationTypeName(edge.type)}
-                            </span>
-                            {sourceNode && (
-                              <MousePointer2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Outgoing relations */}
-                {outgoingEdges.length > 0 && (
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">后续关系</h4>
-                    <div className="space-y-2">
-                      {outgoingEdges.map((edge) => {
-                        const relationInfo = relationIcons[edge.type] || defaultRelationInfo
-                        const RelationIcon = relationInfo.icon
-                        const targetNode = currentGraph?.nodes.get(edge.target)
-
-                        return (
-                          <div
-                            key={edge.id}
-                            onClick={() => targetNode && handleRelationNodeClick(targetNode.id)}
-                            className={cn(
-                              "flex items-center gap-2 text-sm p-2 rounded bg-muted/50",
-                              targetNode && "cursor-pointer hover:bg-muted transition-colors group"
-                            )}
-                          >
-                            <RelationIcon className={`h-4 w-4 ${relationInfo.color}`} />
-                            <span className="text-muted-foreground group-hover:text-foreground transition-colors">
-                              {targetNode?.title || edge.target}
-                            </span>
-                            <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-background">
-                              {getRelationTypeName(edge.type)}
-                            </span>
-                            {targetNode && (
-                              <MousePointer2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </TabsContent>
-
-            {/* 原理 Tab */}
-            <TabsContent value="principle">
-              {hasPrinciple ? (
-                <div className="space-y-3">
-                  <div>
-                    <h4 className="text-sm font-medium mb-2">核心原理</h4>
-                    <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
-                      {selectedNode.principle}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <EmptyState message="暂无深化信息，点击节点上的深化按钮获取详细内容" />
-              )}
-            </TabsContent>
-
-            {/* 示例 Tab */}
-            <TabsContent value="examples">
-              {hasExamples ? (
+          <Accordion type="multiple" defaultValue={['understand', 'explore']}>
+            {/* 认识面板 — Remember + Understand */}
+            <AccordionItem value="understand">
+              <AccordionTrigger>
+                <span className="flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
+                  认识
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
                 <div className="space-y-4">
-                  {/* 应用场景 */}
-                  {selectedNode.useCases && selectedNode.useCases.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">应用场景</h4>
-                      <ul className="space-y-1.5">
-                        {selectedNode.useCases.map((uc, index) => (
-                          <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                            <span className="text-primary mt-0.5 shrink-0">•</span>
-                            <span>{uc}</span>
-                          </li>
-                        ))}
-                      </ul>
+                  {/* Description */}
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">描述</h4>
+                    <p className="text-sm text-muted-foreground">{selectedNode.description}</p>
+                  </div>
+
+                  {/* Time estimate */}
+                  {selectedNode.estimatedTime && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      <span>预计学习时间：约 {selectedNode.estimatedTime} 分钟</span>
                     </div>
                   )}
 
-                  {/* 示例 */}
-                  {selectedNode.examples && selectedNode.examples.length > 0 && (
+                  {/* Tags */}
+                  {selectedNode.tags && selectedNode.tags.length > 0 && (
                     <div>
-                      <h4 className="text-sm font-medium mb-2">代码示例</h4>
-                      <div className="space-y-3">
-                        {selectedNode.examples.map((example, index) => (
-                          <div key={index} className="rounded-lg border bg-muted/30 overflow-hidden">
-                            <div className="px-3 py-2 border-b bg-muted/50">
-                              <h5 className="text-sm font-medium">{example.title}</h5>
-                            </div>
-                            {example.code && (
-                              <pre className="px-3 py-2 text-xs overflow-x-auto bg-background">
-                                <code>{example.code}</code>
-                              </pre>
-                            )}
-                            <div className="px-3 py-2">
-                              <p className="text-sm text-muted-foreground">{example.explanation}</p>
-                            </div>
+                      <h4 className="text-sm font-medium mb-2">标签</h4>
+                      <div className="flex flex-wrap gap-2">
+                        {selectedNode.tags.map((tag, index) => (
+                          <span
+                            key={index}
+                            className="px-2 py-1 text-xs rounded-full bg-secondary text-secondary-foreground"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Key Terms */}
+                  {selectedNode.keyTerms && selectedNode.keyTerms.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-medium mb-2">关键术语</h4>
+                      <div className="space-y-2">
+                        {selectedNode.keyTerms.map((kt, index) => (
+                          <div key={index} className="text-sm">
+                            <span className="font-medium">{kt.term}</span>
+                            <span className="text-muted-foreground"> — {kt.definition}</span>
                           </div>
                         ))}
                       </div>
                     </div>
                   )}
                 </div>
-              ) : (
-                <EmptyState message="暂无深化信息，点击节点上的深化按钮获取详细内容" />
-              )}
-            </TabsContent>
+              </AccordionContent>
+            </AccordionItem>
 
-            {/* 实践 Tab */}
-            <TabsContent value="practices">
-              {hasPractices ? (
-                <div className="space-y-4">
-                  {/* 最佳实践 */}
-                  {selectedNode.bestPractices && selectedNode.bestPractices.length > 0 && (
+            {/* 原理面板 — Understand 深层 */}
+            <AccordionItem value="principle">
+              <AccordionTrigger>
+                <span className="flex items-center gap-2">
+                  <Lightbulb className="h-4 w-4" />
+                  原理
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                {hasPrinciple ? (
+                  <div className="space-y-4">
                     <div>
-                      <h4 className="text-sm font-medium mb-2">最佳实践</h4>
-                      <ul className="space-y-1.5">
-                        {selectedNode.bestPractices.map((bp, index) => (
-                          <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                            <span className="text-green-500 mt-0.5 shrink-0">✓</span>
-                            <span>{bp}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      <h4 className="text-sm font-medium mb-2">核心原理</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+                        {selectedNode.principle}
+                      </p>
                     </div>
-                  )}
 
-                  {/* 常见错误 */}
-                  {selectedNode.commonMistakes && selectedNode.commonMistakes.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium mb-2">常见错误</h4>
-                      <ul className="space-y-1.5">
-                        {selectedNode.commonMistakes.map((cm, index) => (
-                          <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
-                            <span className="text-red-500 mt-0.5 shrink-0">✗</span>
-                            <span>{cm}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <EmptyState message="暂无实践建议，点击节点上的深化按钮获取" />
-              )}
-            </TabsContent>
+                    {/* Sub Topics */}
+                    {selectedNode.subTopics && selectedNode.subTopics.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">子话题</h4>
+                        <div className="space-y-2">
+                          {selectedNode.subTopics.map((st, index) => (
+                            <div key={index} className="rounded-lg border bg-muted/30 p-3">
+                              <h5 className="text-sm font-medium">{st.title}</h5>
+                              <p className="text-sm text-muted-foreground mt-0.5">{st.description}</p>
+                              {st.keyPoints && st.keyPoints.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                  {st.keyPoints.map((kp, kpIndex) => (
+                                    <span
+                                      key={kpIndex}
+                                      className="px-2 py-0.5 text-xs rounded-full bg-secondary text-secondary-foreground"
+                                    >
+                                      {kp}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <EmptyState message="暂无深化信息，点击节点上的深化按钮获取详细内容" />
+                )}
+              </AccordionContent>
+            </AccordionItem>
 
-            {/* 问答 Tab */}
-            <TabsContent value="qa">
-              <QAPanel nodeId={selectedNode.id} />
-            </TabsContent>
-          </Tabs>
+            {/* 应用面板 — Apply */}
+            <AccordionItem value="apply">
+              <AccordionTrigger>
+                <span className="flex items-center gap-2">
+                  <Target className="h-4 w-4" />
+                  应用
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                {hasExamples || hasPractices ? (
+                  <div className="space-y-4">
+                    {/* 应用场景 */}
+                    {selectedNode.useCases && selectedNode.useCases.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">应用场景</h4>
+                        <ul className="space-y-1.5">
+                          {selectedNode.useCases.map((uc, index) => (
+                            <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <span className="text-primary mt-0.5 shrink-0">•</span>
+                              <span>{uc}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* 代码示例 */}
+                    {selectedNode.examples && selectedNode.examples.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">代码示例</h4>
+                        <div className="space-y-3">
+                          {selectedNode.examples.map((example, index) => (
+                            <div key={index} className="rounded-lg border bg-muted/30 overflow-hidden">
+                              <div className="px-3 py-2 border-b bg-muted/50">
+                                <h5 className="text-sm font-medium">{example.title}</h5>
+                              </div>
+                              {example.code && (
+                                <pre className="px-3 py-2 text-xs overflow-x-auto bg-background">
+                                  <code>{example.code}</code>
+                                </pre>
+                              )}
+                              <div className="px-3 py-2">
+                                <p className="text-sm text-muted-foreground">{example.explanation}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 最佳实践 */}
+                    {selectedNode.bestPractices && selectedNode.bestPractices.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">最佳实践</h4>
+                        <ul className="space-y-1.5">
+                          {selectedNode.bestPractices.map((bp, index) => (
+                            <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <span className="text-green-500 mt-0.5 shrink-0">✓</span>
+                              <span>{bp}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* 常见错误 */}
+                    {selectedNode.commonMistakes && selectedNode.commonMistakes.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">常见错误</h4>
+                        <ul className="space-y-1.5">
+                          {selectedNode.commonMistakes.map((cm, index) => (
+                            <li key={index} className="text-sm text-muted-foreground flex items-start gap-2">
+                              <span className="text-red-500 mt-0.5 shrink-0">✗</span>
+                              <span>{cm}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <EmptyState message="暂无深化信息，点击节点上的深化按钮获取详细内容" />
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* 关系面板 */}
+            <AccordionItem value="relations">
+              <AccordionTrigger>
+                <span className="flex items-center gap-2">
+                  <GitBranch className="h-4 w-4" />
+                  关系
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                {hasRelations ? (
+                  <div className="space-y-4">
+                    {/* Incoming relations */}
+                    {incomingEdges.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">前置关系</h4>
+                        <div className="space-y-2">
+                          {incomingEdges.map((edge) => {
+                            const relationInfo = relationIcons[edge.type] || defaultRelationInfo
+                            const RelationIcon = relationInfo.icon
+                            const sourceNode = currentGraph?.nodes.get(edge.source)
+
+                            return (
+                              <div
+                                key={edge.id}
+                                onClick={() => sourceNode && handleRelationNodeClick(sourceNode.id)}
+                                className={cn(
+                                  "flex items-center gap-2 text-sm p-2 rounded bg-muted/50",
+                                  sourceNode && "cursor-pointer hover:bg-muted transition-colors group"
+                                )}
+                              >
+                                <RelationIcon className={`h-4 w-4 ${relationInfo.color}`} />
+                                <span className="text-muted-foreground group-hover:text-foreground transition-colors">
+                                  {sourceNode?.title || edge.source}
+                                </span>
+                                <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-background">
+                                  {getRelationTypeName(edge.type)}
+                                </span>
+                                {sourceNode && (
+                                  <MousePointer2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Outgoing relations */}
+                    {outgoingEdges.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">后续关系</h4>
+                        <div className="space-y-2">
+                          {outgoingEdges.map((edge) => {
+                            const relationInfo = relationIcons[edge.type] || defaultRelationInfo
+                            const RelationIcon = relationInfo.icon
+                            const targetNode = currentGraph?.nodes.get(edge.target)
+
+                            return (
+                              <div
+                                key={edge.id}
+                                onClick={() => targetNode && handleRelationNodeClick(targetNode.id)}
+                                className={cn(
+                                  "flex items-center gap-2 text-sm p-2 rounded bg-muted/50",
+                                  targetNode && "cursor-pointer hover:bg-muted transition-colors group"
+                                )}
+                              >
+                                <RelationIcon className={`h-4 w-4 ${relationInfo.color}`} />
+                                <span className="text-muted-foreground group-hover:text-foreground transition-colors">
+                                  {targetNode?.title || edge.target}
+                                </span>
+                                <span className="ml-auto text-xs px-2 py-0.5 rounded-full bg-background">
+                                  {getRelationTypeName(edge.type)}
+                                </span>
+                                {targetNode && (
+                                  <MousePointer2 className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <EmptyState message="暂无关联知识点" />
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            {/* 探索面板 */}
+            <AccordionItem value="explore">
+              <AccordionTrigger>
+                <span className="flex items-center gap-2">
+                  <MessageCircle className="h-4 w-4" />
+                  探索
+                </span>
+              </AccordionTrigger>
+              <AccordionContent>
+                <QAPanel nodeId={selectedNode.id} />
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </CardContent>
       </Card>
     </div>

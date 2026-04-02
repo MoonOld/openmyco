@@ -87,67 +87,72 @@ describe('NodeDetailPanel', () => {
     })
   })
 
-  describe('tabs', () => {
+  describe('accordion panels', () => {
     beforeEach(() => {
       const node = createMockNode()
       mockCurrentGraph = createMockGraph([node])
       mockSelectedNodeId = 'node-1'
     })
 
-    it('should render all four tabs', () => {
+    it('should render all accordion triggers', () => {
       render(<NodeDetailPanel />)
-      expect(screen.getByRole('tab', { name: /概览/ })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /原理/ })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /示例/ })).toBeInTheDocument()
-      expect(screen.getByRole('tab', { name: /实践/ })).toBeInTheDocument()
+      expect(screen.getByText('认识')).toBeInTheDocument()
+      expect(screen.getByText('原理')).toBeInTheDocument()
+      expect(screen.getByText('应用')).toBeInTheDocument()
+      expect(screen.getByText('关系')).toBeInTheDocument()
+      expect(screen.getByText('探索')).toBeInTheDocument()
     })
 
-    it('should show overview tab by default', () => {
+    it('should show "认识" panel expanded by default with description', () => {
       render(<NodeDetailPanel />)
       expect(screen.getByText('描述')).toBeInTheDocument()
       expect(screen.getByText('A JavaScript library for building UIs')).toBeInTheDocument()
     })
 
-    it('should show tags in overview tab', () => {
+    it('should show tags in "认识" panel', () => {
       render(<NodeDetailPanel />)
       expect(screen.getByText('frontend')).toBeInTheDocument()
       expect(screen.getByText('library')).toBeInTheDocument()
     })
-
-    it('should show estimated time in overview tab', () => {
-      render(<NodeDetailPanel />)
-      expect(screen.getByText(/约 30 分钟/)).toBeInTheDocument()
-    })
   })
 
-  describe('tab switching', () => {
+  describe('accordion expand/collapse', () => {
     beforeEach(() => {
       const node = createMockNode()
       mockCurrentGraph = createMockGraph([node])
       mockSelectedNodeId = 'node-1'
     })
 
-    it('should switch to principle tab and show empty state', () => {
+    it('should show empty state in "原理" panel when expanded', () => {
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /原理/ }))
+      fireEvent.click(screen.getByText('原理'))
       expect(screen.getByText('暂无深化信息，点击节点上的深化按钮获取详细内容')).toBeInTheDocument()
     })
 
-    it('should switch to examples tab and show empty state', () => {
+    it('should show empty state in "应用" panel when expanded', () => {
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /示例/ }))
+      fireEvent.click(screen.getByText('应用'))
       expect(screen.getByText('暂无深化信息，点击节点上的深化按钮获取详细内容')).toBeInTheDocument()
     })
 
-    it('should switch to practices tab and show empty state', () => {
+    it('should show empty state in "关系" panel when no relations', () => {
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /实践/ }))
-      expect(screen.getByText('暂无实践建议，点击节点上的深化按钮获取')).toBeInTheDocument()
+      fireEvent.click(screen.getByText('关系'))
+      expect(screen.getByText('暂无关联知识点')).toBeInTheDocument()
+    })
+
+    it('should collapse "认识" panel when clicked', () => {
+      render(<NodeDetailPanel />)
+      // "认识" is expanded by default
+      expect(screen.getByText('描述')).toBeInTheDocument()
+      // Click to collapse
+      fireEvent.click(screen.getByText('认识'))
+      expect(screen.queryByText('描述')).not.toBeInTheDocument()
     })
   })
 
   describe('deep content display', () => {
-    it('should display principle content', () => {
+    it('should display principle content in "原理" panel', () => {
       const node = createMockNode({
         principle: 'React uses a virtual DOM to efficiently update the UI',
       })
@@ -155,11 +160,11 @@ describe('NodeDetailPanel', () => {
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /原理/ }))
+      fireEvent.click(screen.getByText('原理'))
       expect(screen.getByText('React uses a virtual DOM to efficiently update the UI')).toBeInTheDocument()
     })
 
-    it('should display use cases', () => {
+    it('should display use cases in "应用" panel', () => {
       const node = createMockNode({
         useCases: ['Building SPAs', 'Building dashboards'],
       })
@@ -167,12 +172,12 @@ describe('NodeDetailPanel', () => {
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /示例/ }))
+      fireEvent.click(screen.getByText('应用'))
       expect(screen.getByText('Building SPAs')).toBeInTheDocument()
       expect(screen.getByText('Building dashboards')).toBeInTheDocument()
     })
 
-    it('should display examples with code', () => {
+    it('should display examples with code in "应用" panel', () => {
       const node = createMockNode({
         examples: [
           {
@@ -186,13 +191,13 @@ describe('NodeDetailPanel', () => {
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /示例/ }))
+      fireEvent.click(screen.getByText('应用'))
       expect(screen.getByText('Hello World')).toBeInTheDocument()
       expect(screen.getByText('console.log("Hello")')).toBeInTheDocument()
       expect(screen.getByText('Basic example')).toBeInTheDocument()
     })
 
-    it('should display best practices', () => {
+    it('should display best practices in "应用" panel', () => {
       const node = createMockNode({
         bestPractices: ['Use functional components', 'Keep components small'],
       })
@@ -200,12 +205,12 @@ describe('NodeDetailPanel', () => {
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /实践/ }))
+      fireEvent.click(screen.getByText('应用'))
       expect(screen.getByText('Use functional components')).toBeInTheDocument()
       expect(screen.getByText('Keep components small')).toBeInTheDocument()
     })
 
-    it('should display common mistakes', () => {
+    it('should display common mistakes in "应用" panel', () => {
       const node = createMockNode({
         commonMistakes: ['Mutating state directly', 'Not using keys in lists'],
       })
@@ -213,12 +218,12 @@ describe('NodeDetailPanel', () => {
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /实践/ }))
+      fireEvent.click(screen.getByText('应用'))
       expect(screen.getByText('Mutating state directly')).toBeInTheDocument()
       expect(screen.getByText('Not using keys in lists')).toBeInTheDocument()
     })
 
-    it('should display keyTerms in overview tab', () => {
+    it('should display keyTerms in "认识" panel', () => {
       const node = createMockNode({
         keyTerms: [
           { term: 'Virtual DOM', definition: 'A lightweight copy of the real DOM' },
@@ -244,8 +249,9 @@ describe('NodeDetailPanel', () => {
       expect(screen.queryByText('关键术语')).not.toBeInTheDocument()
     })
 
-    it('should display subTopics in overview tab', () => {
+    it('should display subTopics in "原理" panel', () => {
       const node = createMockNode({
+        principle: 'Some principle',
         subTopics: [
           { title: 'State Hooks', description: 'Manage component state', keyPoints: ['useState', 'useReducer'] },
           { title: 'Effect Hooks', description: 'Handle side effects' },
@@ -255,6 +261,7 @@ describe('NodeDetailPanel', () => {
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
+      fireEvent.click(screen.getByText('原理'))
       expect(screen.getByText('子话题')).toBeInTheDocument()
       expect(screen.getByText('State Hooks')).toBeInTheDocument()
       expect(screen.getByText(/Manage component state/)).toBeInTheDocument()
@@ -264,6 +271,7 @@ describe('NodeDetailPanel', () => {
 
     it('should display subTopic keyPoints', () => {
       const node = createMockNode({
+        principle: 'Some principle',
         subTopics: [
           { title: 'State Hooks', description: 'Manage state', keyPoints: ['useState', 'useReducer'] },
         ],
@@ -272,6 +280,7 @@ describe('NodeDetailPanel', () => {
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
+      fireEvent.click(screen.getByText('原理'))
       expect(screen.getByText('useState')).toBeInTheDocument()
       expect(screen.getByText('useReducer')).toBeInTheDocument()
     })
@@ -286,38 +295,37 @@ describe('NodeDetailPanel', () => {
     })
   })
 
-  describe('QA tab', () => {
-    it('should render QA tab trigger', () => {
+  describe('explore panel', () => {
+    it('should render explore panel trigger', () => {
       const node = createMockNode()
       mockCurrentGraph = createMockGraph([node])
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      expect(screen.getByRole('tab', { name: /问答/ })).toBeInTheDocument()
+      expect(screen.getByText('探索')).toBeInTheDocument()
     })
 
-    it('should show empty state in QA tab', () => {
+    it('should show QA content in explore panel by default', () => {
       const node = createMockNode()
       mockCurrentGraph = createMockGraph([node])
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /问答/ }))
+      // "探索" panel is expanded by default
       expect(screen.getByText('对这个知识点提问，深入探索')).toBeInTheDocument()
     })
 
-    it('should render question input and submit button', () => {
+    it('should render question input and submit button in explore panel', () => {
       const node = createMockNode()
       mockCurrentGraph = createMockGraph([node])
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /问答/ }))
       expect(screen.getByPlaceholderText('输入你的问题...')).toBeInTheDocument()
       expect(screen.getByRole('button', { name: /提问/ })).toBeInTheDocument()
     })
 
-    it('should render QA history list', () => {
+    it('should render QA history list in explore panel', () => {
       const node = createMockNode({
         qas: [
           {
@@ -334,22 +342,33 @@ describe('NodeDetailPanel', () => {
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
-      fireEvent.click(screen.getByRole('tab', { name: /问答/ }))
       expect(screen.getByText('What is Virtual DOM?')).toBeInTheDocument()
       expect(screen.getByText('A lightweight copy of the real DOM')).toBeInTheDocument()
     })
   })
 
-  describe('relation navigation', () => {
-    it('should display incoming relations in overview tab', () => {
+  describe('relations panel', () => {
+    it('should display incoming relations in "关系" panel', () => {
       const node1 = createMockNode({ id: 'node-1', title: 'React' })
       const node2 = createMockNode({ id: 'node-2', title: 'JavaScript' })
       mockCurrentGraph = createMockGraph([node1, node2], [
-        { id: 'edge-1', source: 'node-2', target: 'node-1', type: 'prerequisite' },      ])
+        { id: 'edge-1', source: 'node-2', target: 'node-1', type: 'prerequisite' },
+      ])
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
+      fireEvent.click(screen.getByText('关系'))
       expect(screen.getByText('JavaScript')).toBeInTheDocument()
+    })
+
+    it('should display estimated time in "认识" panel', () => {
+      const node = createMockNode({ estimatedTime: 30 })
+      mockCurrentGraph = createMockGraph([node])
+      mockSelectedNodeId = 'node-1'
+
+      render(<NodeDetailPanel />)
+      // "认识" panel is expanded by default
+      expect(screen.getByText(/约 30 分钟/)).toBeInTheDocument()
     })
 
     it('should navigate to related node on click', () => {
@@ -361,6 +380,7 @@ describe('NodeDetailPanel', () => {
       mockSelectedNodeId = 'node-1'
 
       render(<NodeDetailPanel />)
+      fireEvent.click(screen.getByText('关系'))
       fireEvent.click(screen.getByText('JavaScript'))
       expect(mockSelectNode).toHaveBeenCalledWith('node-2')
       expect(mockSetFocusMode).toHaveBeenCalledWith(true)

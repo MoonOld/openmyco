@@ -112,21 +112,58 @@ advancedDeepenStatus?: 'idle' | 'loading' | 'success' | 'error'
 advancedDeepenError?: string
 ```
 
-## 4. 实施步骤
+## 4. PR 拆分计划
 
-| Step | 内容 | 文件 |
-|------|------|------|
-| 0 | 里程碑文档 + 分支 | `docs/MILESTONE-bloom-accordion.md` |
-| 1 | Accordion UI 组件 | `src/components/ui/accordion.tsx` |
-| 2 | 扩展数据模型 | `src/types/knowledge.ts` |
-| 3 | 扩展 LLM Prompt | `src/lib/llm/prompts.ts` |
-| 4 | 扩展解析器 | `src/lib/llm/parsers.ts` |
-| 5 | 扩展 Client | `src/lib/llm/client.ts` |
-| 6 | 扩展服务层 | `src/services/operationService.ts` |
-| 7 | 扩展 Store | `src/stores/knowledgeStore.ts` |
-| 8 | 重写 NodeDetailPanel | `src/components/graph/NodeDetailPanel.tsx` |
-| 9 | 更新测试 | 测试文件 |
-| 10 | 更新文档 | `docs/SPEC.md` + `docs/ARCHITECTURE.md` |
+### PR-1: Tabs → Accordion 纯布局重构 ✅
+
+> **目标**: 功能完全等价，仅将 Tab 布局改为 Accordion 布局
+> **验证**: 所有现有数据在新面板中正确展示
+
+| 变更 | 文件 |
+|------|------|
+| 新建 Accordion 组件 | `src/components/ui/accordion.tsx` |
+| 导出 Accordion | `src/components/ui/index.ts` |
+| 重写 NodeDetailPanel (Tabs→Accordion) | `src/components/graph/NodeDetailPanel.tsx` |
+| 适配测试 | `src/components/graph/__tests__/NodeDetailPanel.test.tsx` |
+
+### PR-2: Layer 1 — analogies 类比字段全链路
+
+> **目标**: 深化时获取类比内容，"认识"面板展示
+> **验证**: 深化节点后，"认识"面板出现类比区域
+
+| 变更 | 文件 |
+|------|------|
+| 数据模型新增 analogies | `src/types/knowledge.ts` |
+| Prompt 新增 analogies | `src/lib/llm/prompts.ts` |
+| 解析器新增 analogies | `src/lib/llm/parsers.ts` |
+| Client 返回 analogies | `src/lib/llm/client.ts` |
+| Service 写入 analogies | `src/services/operationService.ts` |
+| "认识"面板渲染 analogies | `src/components/graph/NodeDetailPanel.tsx` |
+| 新增测试 | `src/lib/llm/__tests__/parsers.test.ts` |
+
+### PR-3: Layer 2 — 高阶深化全链路
+
+> **目标**: 点击"获取高阶内容"按钮，按需获取 reflectionPrompts + challenge
+> **验证**: "反思与挑战"面板可交互获取并展示高阶内容
+
+| 变更 | 文件 |
+|------|------|
+| 数据模型新增 reflectionPrompts, challenge, 状态字段 | `src/types/knowledge.ts` |
+| 新建 ADVANCED Prompt | `src/lib/llm/prompts.ts` |
+| 新建 parseAdvancedResponse | `src/lib/llm/parsers.ts` |
+| 新建 getAdvancedDeep | `src/lib/llm/client.ts` |
+| 新建 advancedDeepen 服务 | `src/services/operationService.ts` |
+| 新增 advancedDeepen action | `src/stores/knowledgeStore.ts` |
+| "反思与挑战"面板完整交互 | `src/components/graph/NodeDetailPanel.tsx` |
+| 新增测试 | `src/lib/llm/__tests__/parsers.test.ts` |
+
+### 收尾: 文档同步
+
+| 变更 | 文件 |
+|------|------|
+| 更新规格说明 | `docs/SPEC.md` |
+| 更新架构文档 | `docs/ARCHITECTURE.md` |
+| 同步 CLAUDE.md（如有必要） | `CLAUDE.md` |
 
 ## 5. 关键设计决策
 
